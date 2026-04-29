@@ -62,13 +62,13 @@ export function LogStream({ browserId, height = "h-72" }: Props) {
 
 export function normalizeLogs(data: unknown): string[] {
   if (!data) return [];
-  if (Array.isArray(data)) return data.map(String);
-  if (typeof data === "object" && data !== null && "output" in data) {
-    const o = (data as { output?: unknown }).output;
-    if (Array.isArray(o)) return o.map(String);
+  if (typeof data === "object" && data !== null && "logs" in data) {
+    const o = (data as { logs?: unknown }).logs;
     if (typeof o === "string") return o.split(/\r?\n/);
+    if (Array.isArray(o)) return o.map(String);
   }
   if (typeof data === "string") return data.split(/\r?\n/);
+  if (Array.isArray(data)) return data.map(String);
   return [];
 }
 

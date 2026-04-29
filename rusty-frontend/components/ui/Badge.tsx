@@ -1,5 +1,5 @@
 import { cn } from "@/lib/cn";
-import type { BrowserStatus } from "@/lib/api";
+import type { BrowserState } from "@/lib/api";
 
 type Tone = "neutral" | "success" | "error" | "warning" | "info";
 
@@ -33,26 +33,23 @@ export function Badge({
   );
 }
 
-const STATUS_TONE: Record<BrowserStatus, Tone> = {
-  active: "success",
+const STATE_TONE: Record<BrowserState, Tone> = {
   idle: "neutral",
-  error: "error",
-  spawning: "warning",
-  closed: "neutral",
+  reserved: "success",
+  partial_reserved: "warning",
 };
 
-export function StatusBadge({ status }: { status: BrowserStatus }) {
-  const tone = STATUS_TONE[status] ?? "neutral";
+export function StateBadge({ state }: { state: BrowserState }) {
+  const tone = STATE_TONE[state] ?? "neutral";
   return (
     <Badge tone={tone}>
       <span className={cn(
         "h-1.5 w-1.5 rounded-full",
         tone === "success" && "bg-[var(--success)] wb-pulse",
-        tone === "error" && "bg-[var(--error)]",
         tone === "warning" && "bg-[var(--warning)] wb-pulse",
         tone === "neutral" && "bg-muted-foreground",
       )} />
-      {status}
+      {state.replace(/_/g, " ")}
     </Badge>
   );
 }

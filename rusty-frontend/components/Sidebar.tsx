@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/Icon";
 import { useFetch } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import { flux } from "@/lib/flux";
 import { loadConfig } from "@/lib/config";
 import { useEffect, useState } from "react";
 
@@ -28,13 +27,12 @@ type NavItem = {
 export function Sidebar() {
   const pathname = usePathname();
   const browsers = useFetch((s) => api.listBrowsers(s), []);
-  const nodes = useFetch(() => flux.listAgents().catch(() => null), []);
 
   const items: NavItem[] = [
     { href: "/overview", label: "Overview", icon: IconOverview },
     { href: "/browsers", label: "Browsers", icon: IconBrowsers, count: browsers.data?.length ?? null },
     { href: "/logs", label: "Logs", icon: IconLogs },
-    { href: "/nodes", label: "Nodes", icon: IconNodes, count: nodes.data?.length ?? null },
+    { href: "/nodes", label: "Nodes", icon: IconNodes },
     { href: "/settings", label: "Settings", icon: IconSettings },
   ];
 

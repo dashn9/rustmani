@@ -3,7 +3,6 @@
 import { BatchActionBar } from "@/components/browsers/BatchActionBar";
 import { BrowserCard } from "@/components/browsers/BrowserCard";
 import { BrowserDetail } from "@/components/browsers/BrowserDetail";
-import { SpawnModal } from "@/components/browsers/SpawnModal";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -12,6 +11,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Stat } from "@/components/ui/Stat";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/api";
+import { describeError } from "@/lib/config";
 import { usePolling } from "@/lib/hooks";
 import { useState } from "react";
 
@@ -27,9 +27,9 @@ export default function BrowsersPage() {
   const list = data ?? [];
   const counts = {
     total: list.length,
-    active: list.filter((b) => b.status === "active").length,
-    idle: list.filter((b) => b.status === "idle").length,
-    errors: list.filter((b) => b.status === "error").length,
+    idle: list.filter((b) => b.state === "idle").length,
+    reserved: list.filter((b) => b.state === "reserved").length,
+    partial: list.filter((b) => b.state === "partial_reserved").length,
   };
 
   function toggleSelect(id: string) {
@@ -40,6 +40,19 @@ export default function BrowsersPage() {
     });
   }
 
+  async function spawn() {
+    setSpawning(true);
+    try {
+      const r = await api.spawnBrowser();
+      toast.push({ tone: "success", message: `Spawning ${r.execution_id.slice(0, 12)}…` });
+      refetch();
+    } catch (e) {
+      toast.push({ tone: "error", message: describeError(e) });
+    } finally {
+      setSpawning(false);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -47,10 +60,10 @@ export default function BrowsersPage() {
         description="Spawn, control, and observe agents."
         actions={
           <>
-            <Button variant="secondary" size="sm" onClick={refetch}>
-              <IconRefresh size={14} /> Refresh
+            <Button variant="secondary" size="sm" onClick={refetch} disabled={loading}>
+              <IconRefresh size={14} className={loading ? "animate-spin" : ""} /> Refresh
             </Button>
-            <Button size="sm" onClick={() => setSpawning(true)}>
+            <Button size="sm" onClick={spawn} loading={spawning}>
               <IconPlus size={14} /> Spawn
             </Button>
           </>
@@ -59,9 +72,9 @@ export default function BrowsersPage() {
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Total" value={counts.total} loading={loading && !data} />
-        <Stat label="Active" value={counts.active} tone="success" loading={loading && !data} />
         <Stat label="Idle" value={counts.idle} loading={loading && !data} />
-        <Stat label="Errors" value={counts.errors} tone={counts.errors > 0 ? "error" : "default"} loading={loading && !data} />
+        <Stat label="Reserved" value={counts.reserved} tone="success" loading={loading && !data} />
+        <Stat label="Partial" value={counts.partial} tone="warning" loading={loading && !data} />
       </section>
 
       <div className="mt-8">
@@ -87,7 +100,7 @@ export default function BrowsersPage() {
             title="No browsers yet"
             description="Spawn your first agent to start automating browsers."
             action={
-              <Button onClick={() => setSpawning(true)}>
+              <Button onClick={spawn} loading={spawning}>
                 <IconPlus size={14} /> Spawn browser
               </Button>
             }
@@ -96,9 +109,9 @@ export default function BrowsersPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {list.map((b) => (
               <BrowserCard
-                key={b.id}
+                key={b.execution_id}
                 browser={b}
-                selected={selected.has(b.id)}
+                selected={selected.has(b.execution_id)}
                 onToggleSelect={toggleSelect}
                 onOpen={(id) => setOpenId(id)}
               />
@@ -106,16 +119,6 @@ export default function BrowsersPage() {
           </div>
         )}
       </div>
-
-      <SpawnModal
-        open={spawning}
-        onClose={() => setSpawning(false)}
-        onConfirm={async (geo) => {
-          await api.spawnBrowser(geo);
-          toast.push({ tone: "success", message: "Browser spawning" });
-          refetch();
-        }}
-      />
 
       <BrowserDetail
         browserId={openId}

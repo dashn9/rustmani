@@ -2,7 +2,7 @@
 
 import { FullLogView } from "@/components/browsers/LogStream";
 import { PageHeader } from "@/components/PageHeader";
-import { StatusBadge } from "@/components/ui/Badge";
+import { StateBadge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { IconLogs } from "@/components/ui/Icon";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -30,16 +30,16 @@ export default function LogsPage() {
           ) : (
             <ul className="space-y-0.5">
               {list.map((b) => (
-                <li key={b.id}>
+                <li key={b.execution_id}>
                   <button
-                    onClick={() => setActive(b.id)}
+                    onClick={() => setActive(b.execution_id)}
                     className={cn(
                       "w-full flex items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-muted",
-                      active === b.id && "bg-muted",
+                      active === b.execution_id && "bg-muted",
                     )}
                   >
-                    <span className="font-mono truncate flex-1">{b.id.slice(0, 12)}…</span>
-                    <StatusBadge status={b.status} />
+                    <span className="font-mono truncate flex-1">{b.execution_id.slice(0, 12)}…</span>
+                    <StateBadge state={b.state} />
                   </button>
                 </li>
               ))}

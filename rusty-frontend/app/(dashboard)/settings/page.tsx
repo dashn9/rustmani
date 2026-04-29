@@ -5,44 +5,32 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input, Label, SecretInput } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
-import { ApiError, api } from "@/lib/api";
-import { clearConfig, isValidUrl, loadConfig, saveConfig } from "@/lib/config";
+import { api } from "@/lib/api";
+import { clearConfig, connect, DEFAULT_FLUX_URL, describeError, loadConfig } from "@/lib/config";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export default function SettingsPage() {
   const router = useRouter();
   const toast = useToast();
-  const [serverUrl, setServerUrl] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [fluxUrl, setFluxUrl] = useState("");
-  const [busy, setBusy] = useState(false);
+  const initial = typeof window !== "undefined" ? loadConfig() : null;
+  const [serverUrl, setServerUrl] = useState(initial?.serverUrl ?? "");
+  const [apiKey, setApiKey] = useState(initial?.apiKey ?? "");
+  const [fluxUrl, setFluxUrl] = useState(initial?.fluxUrl ?? DEFAULT_FLUX_URL);
+  const [fluxKey, setFluxKey] = useState(initial?.fluxKey ?? "");
+  const [saving, setSaving] = useState(false);
+  const [tearing, setTearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const c = loadConfig();
-    if (!c) return;
-    /* eslint-disable react-hooks/set-state-in-effect */
-    setServerUrl(c.serverUrl);
-    setApiKey(c.apiKey);
-    setFluxUrl(c.fluxUrl ?? "");
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, []);
-
   async function save() {
-    setBusy(true); setError(null);
-    const url = serverUrl.trim().replace(/\/+$/, "");
+    setError(null); setSaving(true);
     try {
-      await api.ping(url, apiKey.trim());
-      saveConfig({ serverUrl: url, apiKey: apiKey.trim(), fluxUrl: fluxUrl.trim() || undefined });
+      await connect({ serverUrl, apiKey, fluxUrl: fluxUrl || undefined, fluxKey: fluxKey || undefined });
       toast.push({ tone: "success", message: "Connection updated" });
     } catch (e) {
-      const msg = e instanceof ApiError
-        ? `${e.status === 0 ? "Cannot reach server" : e.status} — ${e.message}`
-        : (e as Error).message;
-      setError(msg);
+      setError(describeError(e));
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
 
@@ -54,13 +42,13 @@ export default function SettingsPage() {
 
   async function teardown() {
     if (!confirm("Close all browsers and terminate Flux nodes? This cannot be undone.")) return;
+    setTearing(true);
     try {
-      setBusy(true);
       await api.teardown();
       toast.push({ tone: "success", message: "Teardown complete" });
     } catch (e) {
-      toast.push({ tone: "error", message: (e as Error).message });
-    } finally { setBusy(false); }
+      toast.push({ tone: "error", message: describeError(e) });
+    } finally { setTearing(false); }
   }
 
   return (
@@ -69,24 +57,25 @@ export default function SettingsPage() {
 
       <div className="space-y-4 max-w-2xl">
         <Card>
-          <CardHeader><CardTitle>Rusty Browser</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Connection</CardTitle></CardHeader>
           <CardBody className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="url">Server URL</Label>
-              <Input
-                id="url"
-                value={serverUrl}
-                onChange={(e) => setServerUrl(e.target.value)}
-                mono
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="key">API Key</Label>
-              <SecretInput
-                id="key"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="Server URL" htmlFor="url">
+                <Input id="url" mono value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} />
+              </Field>
+              <Field label="API Key" htmlFor="key">
+                <SecretInput id="key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+              </Field>
+              <Field
+                label="Flux URL"
+                htmlFor="flux-url"
+                hint="Optional. Powers Overview and Nodes pages."
+              >
+                <Input id="flux-url" mono placeholder="http://127.0.0.1:7227" value={fluxUrl} onChange={(e) => setFluxUrl(e.target.value)} />
+              </Field>
+              <Field label="Flux API key" htmlFor="flux-key">
+                <SecretInput id="flux-key" value={fluxKey} onChange={(e) => setFluxKey(e.target.value)} />
+              </Field>
             </div>
             {error && (
               <div className="rounded-md border border-[var(--error)]/30 bg-[color-mix(in_oklch,var(--error)_8%,var(--card))] px-3 py-2 text-xs text-[var(--error)]">
@@ -94,26 +83,7 @@ export default function SettingsPage() {
               </div>
             )}
             <div className="flex justify-end">
-              <Button onClick={save} loading={busy}>Save & reconnect</Button>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle>Flux</CardTitle></CardHeader>
-          <CardBody className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="flux">Flux URL</Label>
-              <Input
-                id="flux"
-                value={fluxUrl}
-                onChange={(e) => setFluxUrl(e.target.value)}
-                mono
-                placeholder="http://127.0.0.1:7227"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                Used by the Overview and Nodes pages. Leave blank if not deploying via Flux.
-              </p>
+              <Button onClick={save} loading={saving}>Save & reconnect</Button>
             </div>
           </CardBody>
         </Card>
@@ -129,11 +99,23 @@ export default function SettingsPage() {
             <Row
               title="Teardown all"
               description="Close every browser and terminate all Flux nodes."
-              action={<Button variant="danger" size="sm" onClick={teardown} loading={busy}>Teardown</Button>}
+              action={<Button variant="danger" size="sm" onClick={teardown} loading={tearing}>Teardown</Button>}
             />
           </CardBody>
         </Card>
       </div>
+    </div>
+  );
+}
+
+function Field({
+  label, htmlFor, hint, children,
+}: { label: string; htmlFor: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
+      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
     </div>
   );
 }

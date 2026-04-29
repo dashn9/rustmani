@@ -3,15 +3,18 @@
 import { ApiError, api } from "./api";
 
 export const DEFAULT_SERVER_URL = "http://localhost:8080";
+export const DEFAULT_FLUX_URL = "http://127.0.0.1:7227";
 
 const KEY_URL = "rusty.serverUrl";
 const KEY_API = "rusty.apiKey";
-const KEY_FLUX = "rusty.fluxUrl";
+const KEY_FLUX_URL = "rusty.fluxUrl";
+const KEY_FLUX_KEY = "rusty.fluxKey";
 
 export type Config = {
   serverUrl: string;
   apiKey: string;
   fluxUrl?: string;
+  fluxKey?: string;
 };
 
 export function loadConfig(): Config | null {
@@ -22,14 +25,18 @@ export function loadConfig(): Config | null {
   return {
     serverUrl,
     apiKey: apiKey ?? "",
-    fluxUrl: localStorage.getItem(KEY_FLUX) ?? undefined,
+    fluxUrl: localStorage.getItem(KEY_FLUX_URL) ?? undefined,
+    fluxKey: localStorage.getItem(KEY_FLUX_KEY) ?? undefined,
   };
 }
 
 export function saveConfig(c: Config) {
   localStorage.setItem(KEY_URL, c.serverUrl.replace(/\/+$/, ""));
   localStorage.setItem(KEY_API, c.apiKey);
-  if (c.fluxUrl) localStorage.setItem(KEY_FLUX, c.fluxUrl.replace(/\/+$/, ""));
+  if (c.fluxUrl) localStorage.setItem(KEY_FLUX_URL, c.fluxUrl.replace(/\/+$/, ""));
+  else localStorage.removeItem(KEY_FLUX_URL);
+  if (c.fluxKey) localStorage.setItem(KEY_FLUX_KEY, c.fluxKey);
+  else localStorage.removeItem(KEY_FLUX_KEY);
 }
 
 export function isValidUrl(raw: string): boolean {
@@ -44,6 +51,7 @@ export function isValidUrl(raw: string): boolean {
 export async function connect(input: Config): Promise<Config> {
   const serverUrl = input.serverUrl.trim().replace(/\/+$/, "");
   const fluxUrl = input.fluxUrl?.trim().replace(/\/+$/, "") || undefined;
+  const fluxKey = input.fluxKey?.trim() || undefined;
   const apiKey = input.apiKey.trim();
 
   if (!isValidUrl(serverUrl)) {
@@ -54,7 +62,7 @@ export async function connect(input: Config): Promise<Config> {
   }
 
   await api.ping(serverUrl, apiKey);
-  const cfg = { serverUrl, apiKey, fluxUrl };
+  const cfg = { serverUrl, apiKey, fluxUrl, fluxKey };
   saveConfig(cfg);
   return cfg;
 }
@@ -70,7 +78,8 @@ export function describeError(e: unknown): string {
 export function clearConfig() {
   localStorage.removeItem(KEY_URL);
   localStorage.removeItem(KEY_API);
-  localStorage.removeItem(KEY_FLUX);
+  localStorage.removeItem(KEY_FLUX_URL);
+  localStorage.removeItem(KEY_FLUX_KEY);
 }
 
 export function isConfigured(): boolean {

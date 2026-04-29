@@ -1,6 +1,6 @@
 "use client";
 
-import { StatusBadge } from "@/components/ui/Badge";
+import { StateBadge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
 import type { Browser } from "@/lib/api";
@@ -19,7 +19,7 @@ export function BrowserCard({ browser: b, selected, onToggleSelect, onOpen }: Pr
         "relative cursor-pointer transition-all hover:border-wb-300",
         selected && "ring-2 ring-wb ring-offset-2 ring-offset-background border-wb",
       )}
-      onClick={() => onOpen(b.id)}
+      onClick={() => onOpen(b.execution_id)}
     >
       <label
         className="absolute top-3 right-3 cursor-pointer"
@@ -28,22 +28,20 @@ export function BrowserCard({ browser: b, selected, onToggleSelect, onOpen }: Pr
         <input
           type="checkbox"
           checked={selected}
-          onChange={() => onToggleSelect(b.id)}
+          onChange={() => onToggleSelect(b.execution_id)}
           className="h-4 w-4 rounded border-border accent-wb"
-          aria-label={`Select ${b.id}`}
+          aria-label={`Select ${b.execution_id}`}
         />
       </label>
       <div className="p-4">
-        <div className="flex items-start justify-between pr-7">
-          <div className="font-mono text-xs text-muted-foreground truncate">
-            {b.id}
-          </div>
+        <div className="font-mono text-xs text-muted-foreground truncate pr-7">
+          {b.execution_id}
         </div>
-        <div className="mt-2"><StatusBadge status={b.status} /></div>
+        <div className="mt-2"><StateBadge state={b.state} /></div>
         <dl className="mt-4 grid grid-cols-3 gap-3 text-xs">
-          <Field label="Host" value={b.host ?? "—"} mono />
-          <Field label="gRPC" value={b.grpc_port ?? "—"} mono />
-          <Field label="Ctx" value={b.context_count ?? 0} mono />
+          <Field label="IP" value={b.public_ip || b.private_ip || "—"} mono />
+          <Field label="gRPC" value={b.grpc_port || "—"} mono />
+          <Field label="Ctx" value={b.contexts.length} mono />
         </dl>
       </div>
     </Card>
