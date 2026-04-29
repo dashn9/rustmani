@@ -5,6 +5,7 @@ pub mod middleware;
 use std::sync::Arc;
 
 use axum::{routing::{delete, get, post, put}, Router};
+use tower_http::cors::{Any, CorsLayer};
 
 use crate::AppState;
 use handlers::{browsers, initialize};
@@ -46,9 +47,12 @@ pub fn router(state: Arc<AppState>) -> Router {
             middleware::api_key_auth,
         ));
 
+    let cors = CorsLayer::new().allow_origin(Any);
+
     Router::new()
         .merge(public)
         .merge(protected)
         .layer(axum::middleware::from_fn(middleware::request_logger))
+        .layer(cors)
         .with_state(state)
 }
