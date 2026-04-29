@@ -47,7 +47,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             middleware::api_key_auth,
         ));
 
-    let cors = CorsLayer::new().allow_origin(Any);
+    let cors = CorsLayer::new().allow_origin(Any).allow_headers(Any);
 
     Router::new()
         .merge(public)
