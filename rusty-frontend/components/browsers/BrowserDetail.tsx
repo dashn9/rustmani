@@ -1,39 +1,24 @@
 "use client";
 
 import { ActionRow } from "@/components/browsers/ActionRow";
+import { DisplayStream } from "@/components/browsers/DisplayStream";
 import { LogStream } from "@/components/browsers/LogStream";
+import { UIMap } from "@/components/browsers/UIMap";
 import { Button } from "@/components/ui/Button";
-import { SlideOver } from "@/components/ui/Modal";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { StateBadge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/api";
 import { describeError } from "@/lib/config";
 import { usePolling } from "@/lib/hooks";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-type Props = {
-  browserId: string | null;
-  onClose: () => void;
-  onChanged: () => void;
-};
+type Props = { browserId: string };
 
-export function BrowserDetail({ browserId, onClose, onChanged }: Props) {
-  return (
-    <SlideOver
-      open={browserId !== null}
-      onClose={onClose}
-      title={browserId ? `Browser ${browserId.slice(0, 12)}…` : ""}
-      width="max-w-3xl"
-    >
-      {browserId && <DetailBody id={browserId} onClose={onClose} onChanged={onChanged} />}
-    </SlideOver>
-  );
-}
-
-function DetailBody({
-  id, onClose, onChanged,
-}: { id: string; onClose: () => void; onChanged: () => void }) {
+export function BrowserDetail({ browserId: id }: Props) {
+  const router = useRouter();
   const toast = useToast();
   const { data, loading, error } = usePolling(
     (s) => api.getBrowser(id, s), 4000, [id],
@@ -45,34 +30,47 @@ function DetailBody({
     try {
       await api.closeBrowser(id);
       toast.push({ tone: "success", message: "Browser closed" });
-      onChanged(); onClose();
+      router.push("/browsers");
     } catch (e) {
       toast.push({ tone: "error", message: describeError(e) });
     }
   }
 
   if (error) {
-    return <div className="p-6 text-sm text-[var(--error)]">{error.message}</div>;
+    return (
+      <Card>
+        <CardBody>
+          <div className="text-sm text-[var(--error)]">{error.message}</div>
+        </CardBody>
+      </Card>
+    );
   }
 
   return (
-    <div className="p-5 space-y-6">
-      <Section title="Info">
-        {loading && !data ? (
-          <div className="grid grid-cols-2 gap-3">
-            {[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-9" />)}
-          </div>
-        ) : data ? (
-          <dl className="grid grid-cols-2 gap-3 text-sm">
-            <Info label="Execution ID" value={<span className="font-mono text-xs">{data.execution_id}</span>} />
-            <Info label="Browser ID" value={<span className="font-mono text-xs">{data.browser_id}</span>} />
-            <Info label="State" value={<StateBadge state={data.state} />} />
-            <Info label="Contexts" value={<span className="font-mono">{data.contexts.length}</span>} />
-            <Info label="Public IP" value={<span className="font-mono text-xs">{data.public_ip || "—"}</span>} />
-            <Info label="Private IP" value={<span className="font-mono text-xs">{data.private_ip || "—"}</span>} />
-            <Info label="gRPC port" value={<span className="font-mono text-xs">{data.grpc_port || "—"}</span>} />
-          </dl>
-        ) : null}
+    <div className="space-y-6">
+      <Card>
+        <CardHeader><CardTitle>Info</CardTitle></CardHeader>
+        <CardBody>
+          {loading && !data ? (
+            <div className="grid grid-cols-2 gap-3">
+              {[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-9" />)}
+            </div>
+          ) : data ? (
+            <dl className="grid grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+              <Info label="Execution ID" value={<span className="font-mono text-xs">{data.execution_id}</span>} />
+              <Info label="Browser ID" value={<span className="font-mono text-xs">{data.browser_id}</span>} />
+              <Info label="State" value={<StateBadge state={data.state} />} />
+              <Info label="Contexts" value={<span className="font-mono">{data.contexts.length}</span>} />
+              <Info label="Public IP" value={<span className="font-mono text-xs">{data.public_ip || "—"}</span>} />
+              <Info label="Private IP" value={<span className="font-mono text-xs">{data.private_ip || "—"}</span>} />
+              <Info label="gRPC port" value={<span className="font-mono text-xs">{data.grpc_port || "—"}</span>} />
+            </dl>
+          ) : null}
+        </CardBody>
+      </Card>
+
+      <Section title="Display">
+        <DisplayStream browserId={id} />
       </Section>
 
       <Section title="Interaction">
@@ -91,26 +89,16 @@ function DetailBody({
         />
         <ActionRow
           label="Node click"
-          fields={[{ kind: "text", name: "selector", placeholder: "CSS selector", mono: true, required: true }]}
-          onRun={async (v) => {
-            const { node_id } = await api.findNode(id, v.selector);
-            return api.nodeClick(id, node_id);
-          }}
+          fields={[{ kind: "number", name: "node_id", placeholder: "node_id", required: true }]}
+          onRun={(v) => api.nodeClick(id, Number(v.node_id))}
         />
         <ActionRow
           label="Type"
           fields={[
             { kind: "text", name: "text", placeholder: "text", required: true },
-            { kind: "text", name: "selector", placeholder: "(optional) CSS selector", mono: true },
+            { kind: "number", name: "node_id", placeholder: "node_id (optional, focus default)" },
           ]}
-          onRun={async (v) => {
-            let nodeId: number | undefined;
-            if (v.selector?.trim()) {
-              const r = await api.findNode(id, v.selector);
-              nodeId = r.node_id;
-            }
-            return api.type(id, v.text, nodeId);
-          }}
+          onRun={(v) => api.type(id, v.text, v.node_id?.trim() ? Number(v.node_id) : undefined)}
         />
         <ActionRow
           label="Scroll by"
@@ -119,11 +107,8 @@ function DetailBody({
         />
         <ActionRow
           label="Scroll to node"
-          fields={[{ kind: "text", name: "selector", placeholder: "CSS selector", mono: true, required: true }]}
-          onRun={async (v) => {
-            const { node_id } = await api.findNode(id, v.selector);
-            return api.scrollTo(id, node_id);
-          }}
+          fields={[{ kind: "number", name: "node_id", placeholder: "node_id", required: true }]}
+          onRun={(v) => api.scrollTo(id, Number(v.node_id))}
         />
         <ActionRow
           label="Send keys"
@@ -175,23 +160,13 @@ function DetailBody({
         )}
         <ActionRow
           label="Fetch HTML"
-          fields={[{ kind: "text", name: "selector", placeholder: "(optional) CSS selector", mono: true }]}
-          onRun={async (v) => {
-            let nodeId: number | undefined;
-            if (v.selector?.trim()) {
-              const r = await api.findNode(id, v.selector);
-              nodeId = r.node_id;
-            }
-            return api.fetchHtml(id, nodeId);
-          }}
+          fields={[{ kind: "number", name: "node_id", placeholder: "node_id (optional, full page)" }]}
+          onRun={(v) => api.fetchHtml(id, v.node_id?.trim() ? Number(v.node_id) : undefined)}
         />
         <ActionRow
           label="Fetch text"
-          fields={[{ kind: "text", name: "selector", placeholder: "CSS selector", mono: true, required: true }]}
-          onRun={async (v) => {
-            const { node_id } = await api.findNode(id, v.selector);
-            return api.fetchText(id, node_id);
-          }}
+          fields={[{ kind: "number", name: "node_id", placeholder: "node_id", required: true }]}
+          onRun={(v) => api.fetchText(id, Number(v.node_id))}
         />
         <ActionRow
           label="Find node"
@@ -206,27 +181,10 @@ function DetailBody({
           ]}
           onRun={(v) => api.waitForNode(id, v.selector, Number(v.timeout_ms))}
         />
-        <div className="rounded-md border border-border bg-card flex items-center gap-2 p-3">
-          <span className="text-xs font-medium min-w-24">UI map</span>
-          <Button
-            size="sm"
-            onClick={async () => {
-              try {
-                const r = await api.uiMap(id);
-                if (typeof navigator !== "undefined" && navigator.clipboard) {
-                  await navigator.clipboard.writeText(JSON.stringify(r, null, 2));
-                  toast.push({ tone: "info", message: "UI map copied" });
-                } else {
-                  toast.push({ tone: "info", message: "UI map fetched" });
-                }
-              } catch (e) {
-                toast.push({ tone: "error", message: describeError(e) });
-              }
-            }}
-          >
-            Copy JSON
-          </Button>
-        </div>
+      </Section>
+
+      <Section title="UI map">
+        <UIMap browserId={id} />
       </Section>
 
       <Section title="Contexts">
@@ -238,7 +196,6 @@ function DetailBody({
               try {
                 const r = await api.createContext(id);
                 toast.push({ tone: "success", message: `Context ${r.context_id} opened` });
-                onChanged();
               } catch (e) {
                 toast.push({ tone: "error", message: describeError(e) });
               }
@@ -250,11 +207,7 @@ function DetailBody({
         <ActionRow
           label="Close context"
           fields={[{ kind: "text", name: "ctx", placeholder: "context id", mono: true, required: true }]}
-          onRun={async (v) => {
-            const r = await api.closeContext(id, v.ctx);
-            onChanged();
-            return r;
-          }}
+          onRun={(v) => api.closeContext(id, v.ctx)}
         />
       </Section>
 
@@ -267,16 +220,16 @@ function DetailBody({
         />
       </Section>
 
+      <Section title="Logs">
+        <LogStream executionId={id} height="h-96" />
+      </Section>
+
       <Section title="Lifecycle">
         <div className="flex justify-end">
           <Button variant="danger" size="sm" onClick={closeBrowser}>
             Close browser
           </Button>
         </div>
-      </Section>
-
-      <Section title="Logs">
-        <LogStream executionId={id} />
       </Section>
     </div>
   );
@@ -285,9 +238,9 @@ function DetailBody({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+      <h2 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
         {title}
-      </h3>
+      </h2>
       <div className="space-y-2">{children}</div>
     </section>
   );
@@ -301,3 +254,4 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
     </div>
   );
 }
+

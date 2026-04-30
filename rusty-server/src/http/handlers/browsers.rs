@@ -1,7 +1,11 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::response::IntoResponse;
 use axum::{extract::Path, extract::State, http::StatusCode, Json};
+use futures::{SinkExt, StreamExt};
+use rusty_proto::DisplayChunk;
 use serde::Deserialize;
 
 use crate::http::error::AppError;
@@ -54,6 +58,56 @@ pub async fn delete_all_browsers(
     Ok(Json(serde_json::json!({ "deleted": log })))
 }
 
+
+pub async fn stream_display(
+    State(state): State<Arc<AppState>>,
+    Path(execution_id): Path<String>,
+    headers: axum::http::HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Result<axum::response::Response, AppError> {
+    let (agent_tx, agent_rx) = svc(&state).stream_display(&execution_id).await?;
+    // Echo back the requested subprotocol so the browser accepts the upgrade. The api-key
+    // middleware has already validated this value as a known key.
+    let upgrade = match headers
+        .get("sec-websocket-protocol")
+        .and_then(|v| v.to_str().ok())
+    {
+        Some(proto) => ws.protocols([proto.to_string()]),
+        None => ws,
+    };
+    Ok(upgrade.on_upgrade(move |socket| pipe_display(socket, agent_tx, agent_rx)))
+}
+
+async fn pipe_display(
+    socket: WebSocket,
+    agent_tx: tokio::sync::mpsc::Sender<DisplayChunk>,
+    mut agent_rx: tonic::Streaming<DisplayChunk>,
+) {
+    let (mut ws_sink, mut ws_stream) = socket.split();
+
+    let to_agent = tokio::spawn(async move {
+        while let Some(Ok(msg)) = ws_stream.next().await {
+            let bytes = match msg {
+                Message::Binary(b) => b.to_vec(),
+                Message::Close(_) => break,
+                _ => continue,
+            };
+            if agent_tx.send(DisplayChunk { data: bytes }).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let to_client = tokio::spawn(async move {
+        while let Ok(Some(chunk)) = agent_rx.message().await {
+            if ws_sink.send(Message::Binary(chunk.data.into())).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let _ = tokio::join!(to_agent, to_client);
+}
 
 pub async fn create_context(
     State(state): State<Arc<AppState>>,

@@ -1,16 +1,19 @@
+use std::pin::Pin;
 use std::sync::Arc;
 
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use tonic::{Request, Response, Status};
+use tokio_stream::Stream;
+use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
+use tonic::{Request, Response, Status, Streaming};
 use tonic::transport::{Identity, Server, ServerTlsConfig};
-use tokio_stream::wrappers::TcpListenerStream;
 use tracing::info;
 
 use rusty_proto::browser_agent_server::{BrowserAgent, BrowserAgentServer};
 use rusty_proto::browser_command::Action;
 use rusty_proto::master_client::MasterClient;
-use rusty_proto::{BrowserCommand, CommandResult, RegisterAgentRequest};
+use rusty_proto::{BrowserCommand, CommandResult, DisplayChunk, RegisterAgentRequest};
 
 use crate::browser::ManagedBrowser;
 use crate::error::{GrpcError, TlsError};
@@ -20,8 +23,62 @@ struct BrowserAgentService {
     browser: Arc<Mutex<Option<ManagedBrowser>>>,
 }
 
+type DisplayStream = Pin<Box<dyn Stream<Item = Result<DisplayChunk, Status>> + Send>>;
+
 #[tonic::async_trait]
 impl BrowserAgent for BrowserAgentService {
+    type StreamDisplayStream = DisplayStream;
+
+    async fn stream_display(
+        &self,
+        request: Request<Streaming<DisplayChunk>>,
+    ) -> Result<Response<Self::StreamDisplayStream>, Status> {
+        let port = {
+            let guard = self.browser.lock().await;
+            guard
+                .as_ref()
+                .ok_or_else(|| Status::unavailable("browser is closed"))?
+                .vnc_port()
+                .ok_or_else(|| Status::failed_precondition("display not enabled"))?
+        };
+
+        let socket = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .map_err(|e| Status::unavailable(format!("vnc connect: {e}")))?;
+        let (mut vnc_read, mut vnc_write) = socket.into_split();
+
+        let mut inbound = request.into_inner();
+        tokio::spawn(async move {
+            while let Ok(Some(chunk)) = inbound.message().await {
+                if vnc_write.write_all(&chunk.data).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<DisplayChunk, Status>>(32);
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 16 * 1024];
+            loop {
+                match vnc_read.read(&mut buf).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let chunk = DisplayChunk { data: buf[..n].to_vec() };
+                        if tx.send(Ok(chunk)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(Status::internal(format!("vnc read: {e}")))).await;
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(Response::new(Box::pin(ReceiverStream::new(rx)) as DisplayStream))
+    }
+
     async fn execute(
         &self,
         request: Request<BrowserCommand>,

@@ -42,6 +42,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/browsers/{execution_id}/ui-map/", get(browsers::get_ui_map))
         .route("/browsers/{execution_id}/ui-map-diff/", get(browsers::get_ui_map_diff))
         .route("/browsers/{execution_id}/logs/", get(browsers::get_execution_logs))
+        .route("/browsers/{execution_id}/stream/", get(browsers::stream_display))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::api_key_auth,

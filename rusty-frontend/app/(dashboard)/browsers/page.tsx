@@ -2,7 +2,6 @@
 
 import { BatchActionBar } from "@/components/browsers/BatchActionBar";
 import { BrowserCard } from "@/components/browsers/BrowserCard";
-import { BrowserDetail } from "@/components/browsers/BrowserDetail";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -23,7 +22,6 @@ export default function BrowsersPage() {
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [spawning, setSpawning] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
 
   const list = data ?? [];
   const counts = {
@@ -115,18 +113,12 @@ export default function BrowsersPage() {
                 browser={b}
                 selected={selected.has(b.execution_id)}
                 onToggleSelect={toggleSelect}
-                onOpen={(id) => setOpenId(id)}
               />
             ))}
           </div>
         )}
       </div>
 
-      <BrowserDetail
-        browserId={openId}
-        onClose={() => setOpenId(null)}
-        onChanged={refetch}
-      />
     </div>
   );
 }

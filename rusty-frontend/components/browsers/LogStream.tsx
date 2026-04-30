@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/Badge";
 import { api } from "@/lib/api";
 import { parseAnsiLines, type AnsiSegment } from "@/lib/ansi";
+import { cn } from "@/lib/cn";
 import { flux, type FluxExecution } from "@/lib/flux";
 import { usePolling } from "@/lib/hooks";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -26,9 +27,8 @@ export function LogStream({ executionId, source = "rusty", height = "h-72" }: Pr
     [executionId, source],
   );
 
-  const rawText = useMemo(() => extractText(data), [data]);
-  const lines = useMemo(() => parseAnsiLines(rawText), [rawText]);
-  const meta = source === "flux" && data ? (data as FluxExecution) : null;
+  const { meta, text: rawText } = useMemo(() => extractMetaAndText(data), [data]);
+  const lines = useMemo(() => parseAnsiLines(rawText).map(parseStructured), [rawText]);
 
   useEffect(() => {
     if (autoscroll && ref.current) {
@@ -55,13 +55,13 @@ export function LogStream({ executionId, source = "rusty", height = "h-72" }: Pr
           Auto-scroll
         </label>
       </div>
-      <div ref={ref} className={`${height} overflow-y-auto wb-scroll p-3 font-mono text-[11px] leading-relaxed`}>
+      <div ref={ref} className={`${height} overflow-y-auto wb-scroll p-2 font-mono text-[11px] leading-relaxed`}>
         {error ? (
           <div className="text-[var(--error)]">{error.message}</div>
-        ) : lines.length === 0 || (lines.length === 1 && lines[0].length === 0) ? (
+        ) : lines.length === 0 || (lines.length === 1 && lines[0].segs.length === 0) ? (
           <div className="text-white/40">Waiting for output…</div>
         ) : (
-          lines.map((segs, i) => <Line key={i} index={i + 1} segs={segs} />)
+          lines.map((l, i) => <Line key={i} index={i + 1} line={l} />)
         )}
       </div>
     </div>
@@ -91,30 +91,163 @@ function ExecutionMeta({ meta }: { meta: FluxExecution }) {
   );
 }
 
-function Line({ index, segs }: { index: number; segs: AnsiSegment[] }) {
+const LEVEL_CLS: Record<string, string> = {
+  ERROR: "text-[oklch(0.78_0.20_25)]",
+  WARN:  "text-[oklch(0.85_0.18_85)]",
+  INFO:  "text-[oklch(0.78_0.16_148)]",
+  DEBUG: "text-[oklch(0.74_0.13_240)]",
+  TRACE: "text-[oklch(0.74_0.16_310)]",
+};
+
+type Structured = {
+  segs: AnsiSegment[];
+  ts?: string;
+  level?: string;
+  target?: string;
+  body?: AnsiSegment[];
+};
+
+const TRACING_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(ERROR|WARN|INFO|DEBUG|TRACE)\s+([^:\s]+):\s?(.*)$/;
+
+function parseStructured(segs: AnsiSegment[]): Structured {
+  const text = segs.map((s) => s.text).join("");
+  const m = text.match(TRACING_RE);
+  if (!m) return { segs };
+  const [, ts, level, target, msg] = m;
+  // slice the ANSI segments to keep colors only on the message body.
+  const headLen = text.length - msg.length;
+  const body: AnsiSegment[] = [];
+  let pos = 0;
+  for (const s of segs) {
+    const start = pos;
+    const end = pos + s.text.length;
+    pos = end;
+    if (end <= headLen) continue;
+    const cut = Math.max(0, headLen - start);
+    body.push({ text: s.text.slice(cut), className: s.className });
+  }
+  return { segs, ts, level, target, body };
+}
+
+function Line({ index, line }: { index: number; line: Structured }) {
+  if (!line.level) {
+    return (
+      <div className="group flex gap-2 px-1 hover:bg-white/[0.04] rounded">
+        <span className="text-white/25 select-none w-8 text-right shrink-0 leading-relaxed">{index}</span>
+        <MessageBody segs={line.segs} className="flex-1" />
+      </div>
+    );
+  }
   return (
-    <div className="whitespace-pre-wrap break-all">
-      <span className="text-white/30 mr-2 select-none">{String(index).padStart(4, " ")}</span>
-      {segs.length === 0
-        ? <span> </span>
-        : segs.map((s, j) => (
-            <span key={j} className={s.className || undefined}>{s.text}</span>
-          ))}
+    <div className="group grid grid-cols-[2rem_auto_4rem_auto_1fr] gap-x-2 px-1 hover:bg-white/[0.04] rounded items-baseline">
+      <span className="text-white/25 select-none text-right leading-relaxed">{index}</span>
+      <span className="text-white/35 truncate leading-relaxed" title={line.ts}>
+        {line.ts ? line.ts.slice(11, 23) : ""}
+      </span>
+      <span className={cn("font-bold leading-relaxed", LEVEL_CLS[line.level!] ?? "text-white/70")}>
+        {line.level}
+      </span>
+      <span className="text-white/45 truncate leading-relaxed" title={line.target}>
+        {line.target}
+      </span>
+      <MessageBody segs={line.body ?? line.segs} />
     </div>
   );
 }
 
-function extractText(data: unknown): string {
-  if (!data) return "";
-  if (typeof data === "string") return data;
-  if (Array.isArray(data)) return data.map(String).join("\n");
+const COLLAPSE_THRESHOLD = 300;
+
+function MessageBody({
+  segs, className,
+}: { segs: AnsiSegment[]; className?: string }) {
+  const totalLen = segs.reduce((a, s) => a + s.text.length, 0);
+  const newlines = segs.reduce((a, s) => a + (s.text.match(/\n/g)?.length ?? 0), 0);
+  const collapsible = totalLen > COLLAPSE_THRESHOLD || newlines >= 3;
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className={cn("min-w-0", className)}>
+      <div
+        className={cn(
+          "whitespace-pre-wrap break-all relative",
+          collapsible && !expanded && "max-h-[4.5em] overflow-hidden",
+        )}
+      >
+        {segs.length === 0
+          ? <span> </span>
+          : segs.map((s, j) => (
+              <span key={j} className={s.className || undefined}>{s.text}</span>
+            ))}
+        {collapsible && !expanded && (
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-6"
+            style={{ background: "linear-gradient(to top, var(--wb-950), transparent)" }}
+            aria-hidden
+          />
+        )}
+      </div>
+      {collapsible && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 text-[10px] text-white/40 hover:text-white/80"
+        >
+          {expanded
+            ? "▴ collapse"
+            : `▾ show ${totalLen.toLocaleString()} chars`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Both `/browsers/{id}/logs/` (rusty-server) and `/executions/{id}` (flux)
+ * eventually surface a flux-shaped execution payload. The rusty path wraps it
+ * inside `{ logs: "<json string>" }`; flux returns it directly. Pull out both
+ * the meta (status/duration/error) and the raw `output` text.
+ */
+function extractMetaAndText(data: unknown): { meta: FluxExecution | null; text: string } {
+  if (!data) return { meta: null, text: "" };
+
+  if (typeof data === "string") {
+    const parsed = tryParseExecution(data);
+    return parsed ? { meta: parsed, text: parsed.output ?? "" } : { meta: null, text: data };
+  }
+
+  if (Array.isArray(data)) {
+    return { meta: null, text: data.map(String).join("\n") };
+  }
+
   if (typeof data === "object" && data !== null) {
     const obj = data as { logs?: unknown; output?: unknown };
-    if (typeof obj.output === "string") return obj.output;
-    if (typeof obj.logs === "string") return obj.logs;
-    if (Array.isArray(obj.logs)) return obj.logs.map(String).join("\n");
+    // Direct flux execution shape
+    if (typeof obj.output === "string") {
+      return { meta: data as FluxExecution, text: obj.output };
+    }
+    // Rusty wrapper: { logs: "<json string or raw output>" }
+    if (typeof obj.logs === "string") {
+      const parsed = tryParseExecution(obj.logs);
+      return parsed
+        ? { meta: parsed, text: parsed.output ?? "" }
+        : { meta: null, text: obj.logs };
+    }
+    if (Array.isArray(obj.logs)) {
+      return { meta: null, text: obj.logs.map(String).join("\n") };
+    }
   }
-  return "";
+  return { meta: null, text: "" };
+}
+
+function tryParseExecution(s: string): FluxExecution | null {
+  const trimmed = s.trim();
+  if (!trimmed.startsWith("{")) return null;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && "output" in parsed) {
+      return parsed as FluxExecution;
+    }
+  } catch { /* not JSON */ }
+  return null;
 }
 
 function formatMs(ms: number): string {

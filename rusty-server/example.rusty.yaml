@@ -39,6 +39,8 @@ deployment:
 #     driver_executable_path: "/usr/bin/chromedriver"
 #     sandbox: false
 #     chrome_executable_path: "/usr/bin/google-chrome"
+#     enable_display: true   # default; spawn Xvfb + x11vnc per browser for live streaming and headful stealth.
+#                            # set false to run headless (you must add --headless=new to browser_flags yourself).
 #     browser_flags:
 #       - "--disable-blink-features=AutomationControlled"
 #       - "--disable-dev-shm-usage"

@@ -4,25 +4,24 @@ import { StateBadge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
 import type { Browser } from "@/lib/api";
+import Link from "next/link";
 
 type Props = {
   browser: Browser;
   selected: boolean;
   onToggleSelect: (id: string) => void;
-  onOpen: (id: string) => void;
 };
 
-export function BrowserCard({ browser: b, selected, onToggleSelect, onOpen }: Props) {
+export function BrowserCard({ browser: b, selected, onToggleSelect }: Props) {
   return (
     <Card
       className={cn(
-        "relative cursor-pointer transition-all hover:border-wb-300",
+        "relative transition-all hover:border-wb-300",
         selected && "ring-2 ring-wb ring-offset-2 ring-offset-background border-wb",
       )}
-      onClick={() => onOpen(b.execution_id)}
     >
       <label
-        className="absolute top-3 right-3 cursor-pointer"
+        className="absolute top-3 right-3 cursor-pointer z-10"
         onClick={(e) => e.stopPropagation()}
       >
         <input
@@ -33,7 +32,7 @@ export function BrowserCard({ browser: b, selected, onToggleSelect, onOpen }: Pr
           aria-label={`Select ${b.execution_id}`}
         />
       </label>
-      <div className="p-4">
+      <Link href={`/browsers/${b.execution_id}`} className="block p-4">
         <div className="font-mono text-xs text-muted-foreground truncate pr-7">
           {b.execution_id}
         </div>
@@ -43,7 +42,7 @@ export function BrowserCard({ browser: b, selected, onToggleSelect, onOpen }: Pr
           <Field label="gRPC" value={b.grpc_port || "—"} mono />
           <Field label="Ctx" value={b.contexts.length} mono />
         </dl>
-      </div>
+      </Link>
     </Card>
   );
 }

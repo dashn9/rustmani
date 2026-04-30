@@ -12,7 +12,7 @@ import {
   IconOverview,
   IconSettings,
 } from "@/components/ui/Icon";
-import { useFetch } from "@/lib/hooks";
+import { usePolling } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { loadConfig } from "@/lib/config";
 import { useEffect, useState } from "react";
@@ -26,7 +26,7 @@ type NavItem = {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const browsers = useFetch((s) => api.listBrowsers(s), []);
+  const browsers = usePolling((s) => api.listBrowsers(s), 5000, []);
 
   const items: NavItem[] = [
     { href: "/overview", label: "Overview", icon: IconOverview },
@@ -37,7 +37,7 @@ export function Sidebar() {
   ];
 
   return (
-    <aside className="flex h-screen w-60 shrink-0 flex-col bg-wb text-wb-inverse">
+    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col bg-wb text-wb-inverse">
       <div className="flex items-center gap-2.5 px-5 h-14 border-b border-white/10">
         <IconLogo size={22} className="text-accent" />
         <span className="text-sm font-semibold tracking-tight">Rusty Browser</span>

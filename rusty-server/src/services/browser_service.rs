@@ -361,6 +361,30 @@ impl BrowserService {
         self.exec_inner(execution_id, context_id, action).await.map(|_| ())
     }
 
+    /// Open the bidirectional VNC byte pipe to the agent. Returns (sink, stream)
+    /// of opaque RFB-protocol bytes; the caller is responsible for forwarding to
+    /// whatever client transport (WebSocket, etc.) it owns.
+    pub async fn stream_display(
+        &self,
+        execution_id: &str,
+    ) -> Result<
+        (
+            tokio::sync::mpsc::Sender<DisplayChunk>,
+            tonic::Streaming<DisplayChunk>,
+        ),
+        AppError,
+    > {
+        let browser = self.get_browser(execution_id).await?;
+        let mut client = self.connect(&browser).await?;
+        let (tx, rx) = tokio::sync::mpsc::channel::<DisplayChunk>(32);
+        let outbound = tokio_stream::wrappers::ReceiverStream::new(rx);
+        let response = client
+            .stream_display(tonic::Request::new(outbound))
+            .await
+            .map_err(|e| AppError::Internal(format!("gRPC stream_display: {e}")))?;
+        Ok((tx, response.into_inner()))
+    }
+
     async fn exec_inner(&self, execution_id: &str, context_id: &str, action: Action) -> Result<CommandResult, AppError> {
         let browser = self.get_browser(execution_id).await?;
         tracing::debug!("exec execution_id={execution_id} action={:?}", action);

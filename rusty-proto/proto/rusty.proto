@@ -4,6 +4,13 @@ package rusty;
 // Master connects directly to each browser agent.
 service BrowserAgent {
   rpc Execute(BrowserCommand) returns (CommandResult);
+  // Bidirectional pipe to the agent's local x11vnc socket. Each chunk is opaque
+  // RFB-protocol bytes; agent receives client→server frames in, sends server→client out.
+  rpc StreamDisplay(stream DisplayChunk) returns (stream DisplayChunk);
+}
+
+message DisplayChunk {
+  bytes data = 1;
 }
 
 // Agent calls master on startup to store connection info.

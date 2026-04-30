@@ -1,3 +1,6 @@
+use std::io::{BufRead, BufReader};
+use std::net::TcpListener;
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use rand::Rng;
@@ -52,6 +55,12 @@ pub struct ChromeBrowserLaunchConfig {
     pub chrome_executable_path: Option<String>,
     pub user_data_dir: Option<String>,
     pub browser_flags: Vec<String>,
+    #[serde(default = "default_enable_display")]
+    pub enable_display: bool,
+}
+
+fn default_enable_display() -> bool {
+    true
 }
 
 impl ChromeBrowserLaunchConfig {
@@ -100,12 +109,28 @@ pub struct ManagedBrowser {
     id: Uuid,
     session: IdentitySession,
     contexts: std::collections::HashMap<String, ChromeTab>,
+    xvfb: Option<Child>,
+    vnc: Option<Child>,
+    vnc_port: Option<u16>,
 }
 
 impl ManagedBrowser {
     pub async fn launch(browser_config: ChromeBrowserLaunchConfig) -> Result<Self, BrowserError> {
         let mut identity = get_by_id(1).unwrap();
         identity.proxy = Self::select_proxy(&identity.geo);
+
+        let (xvfb, vnc, vnc_port) = if browser_config.enable_display {
+            let xvfb = spawn_xvfb(
+                identity.screen.original_width as u32,
+                identity.screen.original_height as u32,
+            )?;
+            let display = std::env::var("DISPLAY")
+                .map_err(|e| BrowserError::Launch(format!("DISPLAY not set after Xvfb: {e}")))?;
+            let (vnc, port) = spawn_x11vnc(&display)?;
+            (Some(xvfb), Some(vnc), Some(port))
+        } else {
+            (None, None, None)
+        };
 
         let config = IdentityConfig::new(identity, browser_config.into());
         let mut session = IdentitySession::launch(config)
@@ -121,7 +146,14 @@ impl ManagedBrowser {
             id,
             session,
             contexts: std::collections::HashMap::new(),
+            xvfb,
+            vnc,
+            vnc_port,
         })
+    }
+
+    pub fn vnc_port(&self) -> Option<u16> {
+        self.vnc_port
     }
 
     fn select_proxy(geo: &rustenium_identity::IdentityCountryGeo) -> Option<String> {
@@ -527,8 +559,79 @@ impl ManagedBrowser {
     }
 
     pub async fn close(self) -> bool {
-        self.session.close().await
+        let Self { session, xvfb, vnc, .. } = self;
+        let result = session.close().await;
+        for proc in [vnc, xvfb].into_iter().flatten() {
+            let mut child = proc;
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        result
     }
+}
+
+fn spawn_x11vnc(display_id: &str) -> Result<(Child, u16), BrowserError> {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| BrowserError::Launch(format!("x11vnc port reserve: {e}")))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| BrowserError::Launch(format!("x11vnc port read: {e}")))?
+        .port();
+    drop(listener);
+
+    let child = Command::new("x11vnc")
+        .args([
+            "-display", display_id,
+            "-rfbport", &port.to_string(),
+            "-localhost",
+            "-nopw",
+            "-forever",
+            "-shared",
+            "-quiet",
+            "-noxdamage",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| BrowserError::Launch(format!("x11vnc spawn: {e}")))?;
+
+    tracing::info!("x11vnc {display_id} on 127.0.0.1:{port}");
+    Ok((child, port))
+}
+
+fn spawn_xvfb(width: u32, height: u32) -> Result<Child, BrowserError> {
+    let mut child = Command::new("Xvfb")
+        .args([
+            "-displayfd",
+            "1",
+            "-screen",
+            "0",
+            &format!("{width}x{height}x24"),
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| BrowserError::Launch(format!("Xvfb spawn: {e}")))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| BrowserError::Launch("Xvfb stdout missing".into()))?;
+    let mut line = String::new();
+    BufReader::new(stdout)
+        .read_line(&mut line)
+        .map_err(|e| BrowserError::Launch(format!("Xvfb displayfd read: {e}")))?;
+    let display_num: u32 = line
+        .trim()
+        .parse()
+        .map_err(|e| BrowserError::Launch(format!("Xvfb display number parse: {e}")))?;
+
+    // SAFETY: set_var is unsafe under edition 2024 because concurrent threads reading env
+    // could race. Called once per agent process during browser launch — keep an eye on this
+    // if anything else starts reading DISPLAY concurrently.
+    unsafe { std::env::set_var("DISPLAY", format!(":{display_num}")); }
+    tracing::info!("Xvfb display :{display_num} ({width}x{height}x24)");
+    Ok(child)
 }
 
 fn random_point(x: f64, y: f64, width: f64, height: f64) -> Point {

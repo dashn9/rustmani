@@ -24,6 +24,10 @@ pub async fn api_key_auth(
         .headers()
         .get("X-API-Key")
         .or_else(|| request.headers().get("authorization"))
+        // WebSocket upgrades from browsers cannot set custom headers, so accept the
+        // RFC 6455 Sec-WebSocket-Protocol header as a fallback (frontend passes the key
+        // as the requested subprotocol via `new WebSocket(url, [apiKey])`).
+        .or_else(|| request.headers().get("sec-websocket-protocol"))
         .and_then(|v| v.to_str().ok())
         .map(|s| s.strip_prefix("Bearer ").unwrap_or(s));
 
