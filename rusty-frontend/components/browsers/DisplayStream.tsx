@@ -22,7 +22,7 @@ export function DisplayStream({ browserId: id }: Props) {
     let cancelled = false;
 
     (async () => {
-      const { default: RFB } = await import("@novnc/novnc/lib/rfb");
+      const { default: RFB } = await import("@novnc/novnc");
       if (cancelled) return;
 
       const instance = new RFB(target, url, {

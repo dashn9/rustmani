@@ -54,7 +54,7 @@ export function AreaChart({
   if (data.length === 0) return <EmptyChart height={height} />;
   return (
     <div style={{ width: "100%", height }}>
-      <ResponsiveContainer>
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
         <RAreaChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
           <defs>
             <linearGradient id="wb-area-fill" x1="0" y1="0" x2="0" y2="1">
@@ -89,7 +89,7 @@ export function BarChart({
   if (data.length === 0) return <EmptyChart height={height} />;
   return (
     <div style={{ width: "100%", height }}>
-      <ResponsiveContainer>
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
         <RBarChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
           <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
           <XAxis
@@ -127,7 +127,7 @@ export function DonutChart({
 
   return (
     <div style={{ width: "100%", height }}>
-      <ResponsiveContainer>
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
         <RPieChart>
           <Pie
             data={data}
