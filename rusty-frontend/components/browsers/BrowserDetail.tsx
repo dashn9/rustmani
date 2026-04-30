@@ -79,7 +79,7 @@ function DetailBody({
         <ActionRow
           label="Navigate"
           fields={[{ kind: "text", name: "url", placeholder: "https://example.com", mono: true, required: true }]}
-          onRun={async (v) => { await api.navigate(id, v.url); return "ok"; }}
+          onRun={(v) => api.navigate(id, v.url)}
         />
         <ActionRow
           label="Click"
@@ -87,15 +87,14 @@ function DetailBody({
             { kind: "number", name: "x", placeholder: "x", required: true },
             { kind: "number", name: "y", placeholder: "y", required: true },
           ]}
-          onRun={async (v) => { await api.click(id, Number(v.x), Number(v.y)); return "ok"; }}
+          onRun={(v) => api.click(id, Number(v.x), Number(v.y))}
         />
         <ActionRow
           label="Node click"
           fields={[{ kind: "text", name: "selector", placeholder: "CSS selector", mono: true, required: true }]}
           onRun={async (v) => {
             const { node_id } = await api.findNode(id, v.selector);
-            await api.nodeClick(id, node_id);
-            return `clicked node ${node_id}`;
+            return api.nodeClick(id, node_id);
           }}
         />
         <ActionRow
@@ -110,41 +109,36 @@ function DetailBody({
               const r = await api.findNode(id, v.selector);
               nodeId = r.node_id;
             }
-            await api.type(id, v.text, nodeId);
-            return "ok";
+            return api.type(id, v.text, nodeId);
           }}
         />
         <ActionRow
           label="Scroll by"
           fields={[{ kind: "number", name: "y", placeholder: "Y pixels", required: true }]}
-          onRun={async (v) => { await api.scrollBy(id, Number(v.y)); return "ok"; }}
+          onRun={(v) => api.scrollBy(id, Number(v.y))}
         />
         <ActionRow
           label="Scroll to node"
           fields={[{ kind: "text", name: "selector", placeholder: "CSS selector", mono: true, required: true }]}
           onRun={async (v) => {
             const { node_id } = await api.findNode(id, v.selector);
-            await api.scrollTo(id, node_id);
-            return `scrolled to ${node_id}`;
+            return api.scrollTo(id, node_id);
           }}
         />
         <ActionRow
           label="Send keys"
           fields={[{ kind: "text", name: "keys", placeholder: "Enter, Tab, Ctrl+A…", mono: true, required: true }]}
-          onRun={async (v) => { await api.sendKeys(id, v.keys); return "ok"; }}
+          onRun={(v) => api.sendKeys(id, v.keys)}
         />
         <ActionRow
           label="Hold key"
           fields={[{ kind: "text", name: "key", placeholder: "Shift, Control…", mono: true, required: true }]}
-          onRun={async (v) => { await api.holdKey(id, v.key); return "ok"; }}
+          onRun={(v) => api.holdKey(id, v.key)}
         />
         <ActionRow
           label="Eval JS"
           fields={[{ kind: "text", name: "script", placeholder: "1 + 1", mono: true, required: true }]}
-          onRun={async (v) => {
-            const r = await api.evaluate(id, v.script);
-            return <pre className="font-mono whitespace-pre-wrap">{JSON.stringify(r.result, null, 2)}</pre>;
-          }}
+          onRun={(v) => api.evaluate(id, v.script)}
         />
       </Section>
 
@@ -154,8 +148,13 @@ function DetailBody({
           <Button
             size="sm"
             onClick={async () => {
-              const r = await api.screenshot(id);
-              setScreenshot(r.data);
+              try {
+                const r = await api.screenshot(id);
+                setScreenshot(r.data);
+                toast.push({ tone: "success", message: "Screenshot captured" });
+              } catch (e) {
+                toast.push({ tone: "error", message: describeError(e) });
+              }
             }}
           >
             Capture
@@ -183,8 +182,7 @@ function DetailBody({
               const r = await api.findNode(id, v.selector);
               nodeId = r.node_id;
             }
-            const r = await api.fetchHtml(id, nodeId);
-            return <pre className="font-mono whitespace-pre-wrap max-h-48 overflow-auto wb-scroll">{r.html}</pre>;
+            return api.fetchHtml(id, nodeId);
           }}
         />
         <ActionRow
@@ -192,17 +190,13 @@ function DetailBody({
           fields={[{ kind: "text", name: "selector", placeholder: "CSS selector", mono: true, required: true }]}
           onRun={async (v) => {
             const { node_id } = await api.findNode(id, v.selector);
-            const r = await api.fetchText(id, node_id);
-            return <pre className="font-mono whitespace-pre-wrap">{r.text}</pre>;
+            return api.fetchText(id, node_id);
           }}
         />
         <ActionRow
           label="Find node"
           fields={[{ kind: "text", name: "selector", placeholder: "CSS selector", mono: true, required: true }]}
-          onRun={async (v) => {
-            const r = await api.findNode(id, v.selector);
-            return <span className="font-mono">{r.node_id}</span>;
-          }}
+          onRun={(v) => api.findNode(id, v.selector)}
         />
         <ActionRow
           label="Wait for node"
@@ -210,20 +204,23 @@ function DetailBody({
             { kind: "text", name: "selector", placeholder: "CSS selector", mono: true, required: true },
             { kind: "number", name: "timeout_ms", placeholder: "timeout ms", required: true },
           ]}
-          onRun={async (v) => {
-            const r = await api.waitForNode(id, v.selector, Number(v.timeout_ms));
-            return <span className="font-mono">{r.node_id}</span>;
-          }}
+          onRun={(v) => api.waitForNode(id, v.selector, Number(v.timeout_ms))}
         />
         <div className="rounded-md border border-border bg-card flex items-center gap-2 p-3">
           <span className="text-xs font-medium min-w-24">UI map</span>
           <Button
             size="sm"
             onClick={async () => {
-              const r = await api.uiMap(id);
-              if (typeof navigator !== "undefined" && navigator.clipboard) {
-                await navigator.clipboard.writeText(JSON.stringify(r, null, 2));
-                toast.push({ tone: "info", message: "UI map copied" });
+              try {
+                const r = await api.uiMap(id);
+                if (typeof navigator !== "undefined" && navigator.clipboard) {
+                  await navigator.clipboard.writeText(JSON.stringify(r, null, 2));
+                  toast.push({ tone: "info", message: "UI map copied" });
+                } else {
+                  toast.push({ tone: "info", message: "UI map fetched" });
+                }
+              } catch (e) {
+                toast.push({ tone: "error", message: describeError(e) });
               }
             }}
           >
@@ -254,9 +251,9 @@ function DetailBody({
           label="Close context"
           fields={[{ kind: "text", name: "ctx", placeholder: "context id", mono: true, required: true }]}
           onRun={async (v) => {
-            await api.closeContext(id, v.ctx);
+            const r = await api.closeContext(id, v.ctx);
             onChanged();
-            return "closed";
+            return r;
           }}
         />
       </Section>
@@ -266,10 +263,7 @@ function DetailBody({
           label="Instruct"
           fields={[{ kind: "text", name: "instruction", placeholder: "Find the sign-up button and click it…", required: true }]}
           buttonLabel="Send"
-          onRun={async (v) => {
-            await api.instruct(id, v.instruction);
-            return "queued — see logs";
-          }}
+          onRun={(v) => api.instruct(id, v.instruction)}
         />
       </Section>
 
@@ -282,7 +276,7 @@ function DetailBody({
       </Section>
 
       <Section title="Logs">
-        <LogStream browserId={id} />
+        <LogStream executionId={id} />
       </Section>
     </div>
   );

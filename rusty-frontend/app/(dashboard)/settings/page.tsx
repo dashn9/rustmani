@@ -20,6 +20,7 @@ export default function SettingsPage() {
   const [fluxKey, setFluxKey] = useState(initial?.fluxKey ?? "");
   const [saving, setSaving] = useState(false);
   const [tearing, setTearing] = useState(false);
+  const [initializing, setInitializing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
@@ -38,6 +39,23 @@ export default function SettingsPage() {
     if (!confirm("Disconnect and clear local credentials?")) return;
     clearConfig();
     router.replace("/setup");
+  }
+
+  async function initialize() {
+    if (!confirm("Run one-time initialization? Generates TLS certs and registers the Flux function.")) return;
+    setInitializing(true);
+    try {
+      const r = await api.initialize();
+      const detail = [r.function, r.version].filter(Boolean).join(" v");
+      toast.push({
+        tone: "success",
+        message: detail ? `Initialized — ${detail}` : "Initialized",
+      });
+    } catch (e) {
+      toast.push({ tone: "error", message: describeError(e) });
+    } finally {
+      setInitializing(false);
+    }
   }
 
   async function teardown() {
@@ -85,6 +103,17 @@ export default function SettingsPage() {
             <div className="flex justify-end">
               <Button onClick={save} loading={saving}>Save & reconnect</Button>
             </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>System</CardTitle></CardHeader>
+          <CardBody>
+            <Row
+              title="Initialize"
+              description="One-time setup: Initialize Flux and register agent. Required before spawning."
+              action={<Button size="sm" onClick={initialize} loading={initializing}>Initialize</Button>}
+            />
           </CardBody>
         </Card>
 

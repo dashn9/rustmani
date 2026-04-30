@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/api";
 import { describeError } from "@/lib/config";
 import { usePolling } from "@/lib/hooks";
+import { pushRecentExecution } from "@/lib/recentExecutions";
 import { useState } from "react";
 
 export default function BrowsersPage() {
@@ -44,6 +45,7 @@ export default function BrowsersPage() {
     setSpawning(true);
     try {
       const r = await api.spawnBrowser();
+      pushRecentExecution(r.execution_id);
       toast.push({ tone: "success", message: `Spawning ${r.execution_id.slice(0, 12)}…` });
       refetch();
     } catch (e) {

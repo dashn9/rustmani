@@ -98,7 +98,7 @@ pub async fn serve(
             .connect_lazy();
 
         let mut client = MasterClient::new(channel);
-        info!("Connecting to master, registering browser={browser_id_owned}");
+        info!("Connecting to master, registering browser={browser_id_owned} on={master}");
         match client.register(Request::new(registration)).await {
             Ok(_) => info!("Registered with master"),
             Err(e) => tracing::error!("Failed to register with master: {e}"),

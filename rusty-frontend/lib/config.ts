@@ -1,6 +1,7 @@
 "use client";
 
 import { ApiError, api } from "./api";
+import { clearRecentExecutions } from "./recentExecutions";
 
 export const DEFAULT_SERVER_URL = "http://localhost:8080";
 export const DEFAULT_FLUX_URL = "http://127.0.0.1:7227";
@@ -80,6 +81,7 @@ export function clearConfig() {
   localStorage.removeItem(KEY_API);
   localStorage.removeItem(KEY_FLUX_URL);
   localStorage.removeItem(KEY_FLUX_KEY);
+  clearRecentExecutions();
 }
 
 export function isConfigured(): boolean {

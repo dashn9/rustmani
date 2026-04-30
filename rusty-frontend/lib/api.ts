@@ -138,4 +138,9 @@ export const api = {
     request<{ logs: string }>(`/browsers/${id}/logs/`, { signal }),
 
   teardown: () => request<unknown>("/teardown/", { method: "DELETE" }),
+
+  initialize: () =>
+    request<{ status: string; function?: string; version?: string }>("/initialize/", {
+      method: "POST", body: {},
+    }),
 };

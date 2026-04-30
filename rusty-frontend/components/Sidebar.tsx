@@ -32,7 +32,7 @@ export function Sidebar() {
     { href: "/overview", label: "Overview", icon: IconOverview },
     { href: "/browsers", label: "Browsers", icon: IconBrowsers, count: browsers.data?.length ?? null },
     { href: "/logs", label: "Logs", icon: IconLogs },
-    { href: "/nodes", label: "Nodes", icon: IconNodes },
+    { href: "/flux", label: "Flux", icon: IconNodes },
     { href: "/settings", label: "Settings", icon: IconSettings },
   ];
 
