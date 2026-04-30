@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import { describeError } from "@/lib/config";
 import { usePolling } from "@/lib/hooks";
 import { pushRecentExecution } from "@/lib/recentExecutions";
+import Link from "next/link";
 import { useState } from "react";
 
 export default function BrowsersPage() {
@@ -60,6 +61,9 @@ export default function BrowsersPage() {
         description="Spawn, control, and observe agents."
         actions={
           <>
+            <Link href="/browsers/display">
+              <Button variant="secondary" size="sm">Live displays</Button>
+            </Link>
             <Button variant="secondary" size="sm" onClick={refetch} disabled={loading}>
               <IconRefresh size={14} className={loading ? "animate-spin" : ""} /> Refresh
             </Button>

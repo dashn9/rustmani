@@ -1,11 +1,16 @@
 "use client";
 
+import type RFBType from "@novnc/novnc/lib/rfb";
 import { loadConfig } from "@/lib/config";
 import { useEffect, useRef, useState } from "react";
 
-type Props = { browserId: string };
+type Props = {
+  browserId: string;
+  viewOnly?: boolean;
+  className?: string;
+};
 
-export function DisplayStream({ browserId: id }: Props) {
+export function DisplayStream({ browserId: id, viewOnly = false, className }: Props) {
   const targetRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
@@ -22,14 +27,16 @@ export function DisplayStream({ browserId: id }: Props) {
     let cancelled = false;
 
     (async () => {
-      const { default: RFB } = await import("@novnc/novnc");
+      // @ts-expect-error @types/novnc__novnc only declares the @novnc/novnc/lib/rfb subpath,
+      // but the package's runtime `exports` field only allows the bare specifier.
+      const { default: RFB } = (await import("@novnc/novnc")) as { default: typeof RFBType };
       if (cancelled) return;
 
       const instance = new RFB(target, url, {
         wsProtocols: cfg.apiKey ? [cfg.apiKey] : [],
       });
       instance.scaleViewport = true;
-      instance.viewOnly = false;
+      instance.viewOnly = viewOnly;
       instance.addEventListener("connect", () => setConnected(true));
       instance.addEventListener("disconnect", (e: { detail?: { clean?: boolean } }) => {
         setConnected(false);
@@ -45,16 +52,20 @@ export function DisplayStream({ browserId: id }: Props) {
       cancelled = true;
       rfb?.disconnect();
     };
-  }, [id]);
+  }, [id, viewOnly]);
 
   return (
-    <div className="rounded-md border border-border bg-black overflow-hidden">
+    <div className={`relative rounded-md border border-border bg-black overflow-hidden ${className ?? ""}`}>
       <div ref={targetRef} className="w-full aspect-video" />
       {!connected && !error && (
-        <div className="px-3 py-2 text-xs text-muted-foreground">Connecting…</div>
+        <div className="absolute inset-x-0 bottom-0 px-3 py-1 text-[10px] text-muted-foreground bg-black/60">
+          Connecting…
+        </div>
       )}
       {error && (
-        <div className="px-3 py-2 text-xs text-[var(--error)]">{error}</div>
+        <div className="absolute inset-x-0 bottom-0 px-3 py-1 text-[10px] text-[var(--error)] bg-black/60">
+          {error}
+        </div>
       )}
     </div>
   );

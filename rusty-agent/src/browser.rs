@@ -115,18 +115,25 @@ pub struct ManagedBrowser {
 }
 
 impl ManagedBrowser {
-    pub async fn launch(browser_config: ChromeBrowserLaunchConfig) -> Result<Self, BrowserError> {
+    pub async fn launch(mut browser_config: ChromeBrowserLaunchConfig) -> Result<Self, BrowserError> {
         let mut identity = get_by_id(1).unwrap();
         identity.proxy = Self::select_proxy(&identity.geo);
 
         let (xvfb, vnc, vnc_port) = if browser_config.enable_display {
-            let xvfb = spawn_xvfb(
-                identity.screen.original_width as u32,
-                identity.screen.original_height as u32,
-            )?;
+            let w = identity.screen.original_width as u32;
+            let h = identity.screen.original_height as u32;
+            let xvfb = spawn_xvfb(w, h)?;
             let display = std::env::var("DISPLAY")
                 .map_err(|e| BrowserError::Launch(format!("DISPLAY not set after Xvfb: {e}")))?;
             let (vnc, port) = spawn_x11vnc(&display)?;
+            // No window manager under Xvfb, so Chrome opens at its tiny default and the rest
+            // of the framebuffer renders as the X root (black). Pin Chrome to fill the screen.
+            if !browser_config.browser_flags.iter().any(|f| f.starts_with("--window-size=")) {
+                browser_config.browser_flags.push(format!("--window-size={w},{h}"));
+            }
+            if !browser_config.browser_flags.iter().any(|f| f.starts_with("--window-position=")) {
+                browser_config.browser_flags.push("--window-position=0,0".to_string());
+            }
             (Some(xvfb), Some(vnc), Some(port))
         } else {
             (None, None, None)
