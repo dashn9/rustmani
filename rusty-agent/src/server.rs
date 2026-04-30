@@ -91,7 +91,7 @@ pub async fn serve(
     };
 
     tokio::spawn(async move {
-        let channel = tonic::transport::Channel::from_shared(master)
+        let channel = tonic::transport::Channel::from_shared(master.clone())
             .expect("valid master URL")
             .tls_config(master_tls)
             .expect("master TLS config")
@@ -99,6 +99,7 @@ pub async fn serve(
 
         let mut client = MasterClient::new(channel);
         info!("Connecting to master, registering browser={browser_id_owned} on={master}");
+        drop(master);
         match client.register(Request::new(registration)).await {
             Ok(_) => info!("Registered with master"),
             Err(e) => tracing::error!("Failed to register with master: {e}"),
