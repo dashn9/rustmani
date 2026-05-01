@@ -1,5 +1,6 @@
 "use client";
 
+import { DisplayStream } from "@/components/browsers/DisplayStream";
 import { StateBadge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
@@ -9,31 +10,52 @@ import Link from "next/link";
 type Props = {
   browser: Browser;
   selected: boolean;
+  showDisplay: boolean;
   onToggleSelect: (id: string) => void;
+  onToggleDisplay: (id: string) => void;
 };
 
-export function BrowserCard({ browser: b, selected, onToggleSelect }: Props) {
+export function BrowserCard({
+  browser: b, selected, showDisplay, onToggleSelect, onToggleDisplay,
+}: Props) {
   return (
     <Card
       className={cn(
-        "relative transition-all hover:border-wb-300",
+        "relative flex flex-col overflow-hidden transition-all hover:border-wb-300",
         selected && "ring-2 ring-wb ring-offset-2 ring-offset-background border-wb",
+        showDisplay && "sm:col-span-2 sm:mx-auto sm:w-4/5",
       )}
     >
-      <label
-        className="absolute top-3 right-3 cursor-pointer z-10"
+      <div
+        className="absolute top-2.5 right-2.5 z-10 flex items-center gap-2 rounded-md bg-card/85 px-1.5 py-1 backdrop-blur border border-border"
         onClick={(e) => e.stopPropagation()}
       >
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={() => onToggleSelect(b.execution_id)}
-          className="h-4 w-4 rounded border-border accent-wb"
-          aria-label={`Select ${b.execution_id}`}
-        />
-      </label>
+        <button
+          type="button"
+          onClick={() => onToggleDisplay(b.execution_id)}
+          className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+        >
+          {showDisplay ? "Hide display" : "Show display"}
+        </button>
+        <label className="cursor-pointer flex items-center">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect(b.execution_id)}
+            className="h-4 w-4 rounded border-border accent-wb"
+            aria-label={`Select ${b.execution_id}`}
+          />
+        </label>
+      </div>
+
+      {showDisplay && (
+        <div className="border-b border-border bg-black aspect-video">
+          <DisplayStream browserId={b.execution_id} className="!rounded-none !border-0 h-full" />
+        </div>
+      )}
+
       <Link href={`/browsers/${b.execution_id}`} className="block p-4">
-        <div className="font-mono text-xs text-muted-foreground truncate pr-7">
+        <div className="font-mono text-xs text-muted-foreground truncate pr-40">
           {b.execution_id}
         </div>
         <div className="mt-2"><StateBadge state={b.state} /></div>

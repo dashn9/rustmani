@@ -1,0 +1,903 @@
+diff --git a/rusty-agent/src/browser.rs b/rusty-agent/src/browser.rs
+index 3478bfb..9094d39 100644
+--- a/rusty-agent/src/browser.rs
++++ b/rusty-agent/src/browser.rs
+@@ -115,18 +115,25 @@ pub struct ManagedBrowser {
+ }
+ 
+ impl ManagedBrowser {
+-    pub async fn launch(browser_config: ChromeBrowserLaunchConfig) -> Result<Self, BrowserError> {
++    pub async fn launch(mut browser_config: ChromeBrowserLaunchConfig) -> Result<Self, BrowserError> {
+         let mut identity = get_by_id(1).unwrap();
+         identity.proxy = Self::select_proxy(&identity.geo);
+ 
+         let (xvfb, vnc, vnc_port) = if browser_config.enable_display {
+-            let xvfb = spawn_xvfb(
+-                identity.screen.original_width as u32,
+-                identity.screen.original_height as u32,
+-            )?;
++            let w = identity.screen.original_width as u32;
++            let h = identity.screen.original_height as u32;
++            let xvfb = spawn_xvfb(w, h)?;
+             let display = std::env::var("DISPLAY")
+                 .map_err(|e| BrowserError::Launch(format!("DISPLAY not set after Xvfb: {e}")))?;
+             let (vnc, port) = spawn_x11vnc(&display)?;
++            // No window manager under Xvfb, so Chrome opens at its tiny default and the rest
++            // of the framebuffer renders as the X root (black). Pin Chrome to fill the screen.
++            if !browser_config.browser_flags.iter().any(|f| f.starts_with("--window-size=")) {
++                browser_config.browser_flags.push(format!("--window-size={w},{h}"));
++            }
++            if !browser_config.browser_flags.iter().any(|f| f.starts_with("--window-position=")) {
++                browser_config.browser_flags.push("--window-position=0,0".to_string());
++            }
+             (Some(xvfb), Some(vnc), Some(port))
+         } else {
+             (None, None, None)
+diff --git a/rusty-frontend/app/(dashboard)/browsers/display/page.tsx b/rusty-frontend/app/(dashboard)/browsers/display/page.tsx
+new file mode 100644
+index 0000000..01f5b4e
+--- /dev/null
++++ b/rusty-frontend/app/(dashboard)/browsers/display/page.tsx
+@@ -0,0 +1,141 @@
++"use client";
++
++import { DisplayStream } from "@/components/browsers/DisplayStream";
++import { PageHeader } from "@/components/PageHeader";
++import { Button } from "@/components/ui/Button";
++import { EmptyState } from "@/components/ui/EmptyState";
++import { IconBrowsers } from "@/components/ui/Icon";
++import { Skeleton } from "@/components/ui/Skeleton";
++import { api } from "@/lib/api";
++import { usePolling } from "@/lib/hooks";
++import Link from "next/link";
++import { useSearchParams } from "next/navigation";
++import { Suspense, useEffect, useMemo, useState } from "react";
++
++export default function BatchDisplayPage() {
++  return (
++    <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Loading…</div>}>
++      <BatchDisplay />
++    </Suspense>
++  );
++}
++
++function BatchDisplay() {
++  const params = useSearchParams();
++  const filterIds = useMemo(() => {
++    const raw = params.get("ids");
++    if (!raw) return null;
++    return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
++  }, [params]);
++
++  const { data, loading, error } = usePolling(
++    (s) => api.listBrowsers(s),
++    8000,
++    [],
++  );
++
++  const browsers = useMemo(() => {
++    const all = data ?? [];
++    return filterIds ? all.filter((b) => filterIds.has(b.execution_id)) : all;
++  }, [data, filterIds]);
++
++  const [focused, setFocused] = useState<string | null>(null);
++
++  useEffect(() => {
++    function onKey(e: KeyboardEvent) {
++      if (e.key === "Escape") setFocused(null);
++    }
++    window.addEventListener("keydown", onKey);
++    return () => window.removeEventListener("keydown", onKey);
++  }, []);
++
++  return (
++    <div>
++      <PageHeader
++        title="Live displays"
++        description={
++          filterIds
++            ? `Watching ${browsers.length} of ${data?.length ?? 0} browser(s).`
++            : "Watching all browsers. Add ?ids=… to limit."
++        }
++        actions={
++          <Link href="/browsers">
++            <Button variant="secondary" size="sm">Back to browsers</Button>
++          </Link>
++        }
++      />
++
++      {error ? (
++        <div className="rounded-md border border-[var(--error)]/30 bg-[color-mix(in_oklch,var(--error)_8%,var(--card))] p-4 text-sm text-[var(--error)]">
++          {error.message}
++        </div>
++      ) : loading && !data ? (
++        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
++          {[0, 1, 2].map((i) => <Skeleton key={i} className="aspect-video w-full" />)}
++        </div>
++      ) : browsers.length === 0 ? (
++        <EmptyState
++          icon={<IconBrowsers size={32} />}
++          title="No displays to show"
++          description={
++            filterIds
++              ? "None of the selected browsers are running."
++              : "Spawn a browser to see its display here."
++          }
++        />
++      ) : (
++        <div className={focused ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"}>
++          {browsers.map((b) => {
++            const isFocused = focused === b.execution_id;
++            const hidden = focused !== null && !isFocused;
++            if (hidden) return null;
++            return (
++              <DisplayTile
++                key={b.execution_id}
++                executionId={b.execution_id}
++                state={b.state}
++                expanded={isFocused}
++                onToggle={() => setFocused(isFocused ? null : b.execution_id)}
++              />
++            );
++          })}
++        </div>
++      )}
++    </div>
++  );
++}
++
++function DisplayTile({
++  executionId, state, expanded, onToggle,
++}: {
++  executionId: string;
++  state: string;
++  expanded: boolean;
++  onToggle: () => void;
++}) {
++  return (
++    <div className={expanded ? "space-y-2" : "space-y-1.5"}>
++      <div className="flex items-center gap-2 text-[11px]">
++        <span className="font-mono text-muted-foreground truncate flex-1">{executionId}</span>
++        <span className="font-mono text-[10px] text-muted-foreground uppercase">{state}</span>
++        <button
++          type="button"
++          onClick={onToggle}
++          className="text-muted-foreground hover:text-foreground"
++        >
++          {expanded ? "shrink" : "expand"}
++        </button>
++        <Link
++          href={`/browsers/${executionId}`}
++          className="text-[var(--accent)] hover:underline"
++        >
++          open
++        </Link>
++      </div>
++      <DisplayStream
++        browserId={executionId}
++        viewOnly={!expanded}
++      />
++    </div>
++  );
++}
+diff --git a/rusty-frontend/app/(dashboard)/browsers/page.tsx b/rusty-frontend/app/(dashboard)/browsers/page.tsx
+index 7a657b4..e921f5b 100644
+--- a/rusty-frontend/app/(dashboard)/browsers/page.tsx
++++ b/rusty-frontend/app/(dashboard)/browsers/page.tsx
+@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
+ import { describeError } from "@/lib/config";
+ import { usePolling } from "@/lib/hooks";
+ import { pushRecentExecution } from "@/lib/recentExecutions";
++import Link from "next/link";
+ import { useState } from "react";
+ 
+ export default function BrowsersPage() {
+@@ -60,6 +61,9 @@ export default function BrowsersPage() {
+         description="Spawn, control, and observe agents."
+         actions={
+           <>
++            <Link href="/browsers/display">
++              <Button variant="secondary" size="sm">Live displays</Button>
++            </Link>
+             <Button variant="secondary" size="sm" onClick={refetch} disabled={loading}>
+               <IconRefresh size={14} className={loading ? "animate-spin" : ""} /> Refresh
+             </Button>
+diff --git a/rusty-frontend/components/Charts.tsx b/rusty-frontend/components/Charts.tsx
+index 6aa4a37..b844910 100644
+--- a/rusty-frontend/components/Charts.tsx
++++ b/rusty-frontend/components/Charts.tsx
+@@ -54,7 +54,7 @@ export function AreaChart({
+   if (data.length === 0) return <EmptyChart height={height} />;
+   return (
+     <div style={{ width: "100%", height }}>
+-      <ResponsiveContainer>
++      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+         <RAreaChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+           <defs>
+             <linearGradient id="wb-area-fill" x1="0" y1="0" x2="0" y2="1">
+@@ -89,7 +89,7 @@ export function BarChart({
+   if (data.length === 0) return <EmptyChart height={height} />;
+   return (
+     <div style={{ width: "100%", height }}>
+-      <ResponsiveContainer>
++      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+         <RBarChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+           <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
+           <XAxis
+@@ -127,7 +127,7 @@ export function DonutChart({
+ 
+   return (
+     <div style={{ width: "100%", height }}>
+-      <ResponsiveContainer>
++      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+         <RPieChart>
+           <Pie
+             data={data}
+diff --git a/rusty-frontend/components/browsers/BatchActionBar.tsx b/rusty-frontend/components/browsers/BatchActionBar.tsx
+index a9a4cca..099dd12 100644
+--- a/rusty-frontend/components/browsers/BatchActionBar.tsx
++++ b/rusty-frontend/components/browsers/BatchActionBar.tsx
+@@ -1,11 +1,13 @@
+ "use client";
+ 
++import { BatchResults, RunRecord } from "@/components/browsers/BatchResults";
+ import { Button } from "@/components/ui/Button";
+ import { Input } from "@/components/ui/Input";
+-import { Modal } from "@/components/ui/Modal";
+-import { api } from "@/lib/api";
+ import { useToast } from "@/components/ui/Toast";
+-import { useState } from "react";
++import { ACTIONS, ActionDef, actionsByGroup, getAction } from "@/lib/actionCatalog";
++import { describeError } from "@/lib/config";
++import Link from "next/link";
++import { useMemo, useState } from "react";
+ 
+ type Props = {
+   selectedIds: string[];
+@@ -13,104 +15,150 @@ type Props = {
+   onChanged: () => void;
+ };
+ 
+-type PromptKind = "navigate" | "instruct" | null;
+-
+ export function BatchActionBar({ selectedIds, onClear, onChanged }: Props) {
+   const toast = useToast();
++  const [actionId, setActionId] = useState<string>(ACTIONS[0].id);
++  const [values, setValues] = useState<Record<string, string>>({});
+   const [busy, setBusy] = useState(false);
+-  const [prompt, setPrompt] = useState<PromptKind>(null);
+-  const [text, setText] = useState("");
++  const [runs, setRuns] = useState<RunRecord[] | null>(null);
++
++  const action = getAction(actionId) ?? ACTIONS[0];
++  const groups = useMemo(actionsByGroup, []);
++
++  function updateRun(id: string, patch: Partial<RunRecord>) {
++    setRuns((prev) =>
++      prev ? prev.map((r) => (r.id === id ? { ...r, ...patch } : r)) : prev,
++    );
++  }
++
++  async function executeOne(action: ActionDef, id: string) {
++    const start = performance.now();
++    try {
++      const result = await action.run(id, values);
++      updateRun(id, { status: "ok", result, durationMs: performance.now() - start });
++      return true;
++    } catch (e) {
++      updateRun(id, { status: "fail", error: describeError(e), durationMs: performance.now() - start });
++      return false;
++    }
++  }
++
++  function missingRequired(): string | null {
++    for (const f of action.fields) {
++      if (f.required && !(values[f.name] ?? "").trim()) return f.name;
++    }
++    return null;
++  }
++
++  async function run() {
++    const missing = missingRequired();
++    if (missing) {
++      toast.push({ tone: "error", message: `Missing field: ${missing}` });
++      return;
++    }
++    if (action.destructive
++      && !confirm(`Run "${action.label}" on ${selectedIds.length} browser(s)?`)) return;
+ 
+-  async function fanOut<T>(label: string, fn: (id: string) => Promise<T>) {
+     setBusy(true);
+-    const res = await Promise.allSettled(selectedIds.map(fn));
+-    const ok = res.filter((r) => r.status === "fulfilled").length;
+-    const fail = res.length - ok;
++    setRuns(selectedIds.map((id) => ({ id, status: "pending" })));
++
++    const outcomes = await Promise.all(
++      selectedIds.map((id) => executeOne(action, id)),
++    );
++    setBusy(false);
++
++    const ok = outcomes.filter(Boolean).length;
++    const fail = outcomes.length - ok;
+     toast.push({
+       tone: fail === 0 ? "success" : "error",
+-      message: `${label}: ${ok} ok${fail ? ` · ${fail} failed` : ""}`,
++      message: `${action.label}: ${ok} ok${fail ? ` · ${fail} failed` : ""}`,
+     });
+-    setBusy(false);
+     onChanged();
++    if (action.id === "close-browser" && fail === 0) onClear();
+   }
+ 
+-  async function closeAll() {
+-    if (!confirm(`Close ${selectedIds.length} browser(s)?`)) return;
+-    await fanOut("Closed", (id) => api.closeBrowser(id));
+-    onClear();
++  async function retryFailed() {
++    if (!runs) return;
++    const failedIds = runs.filter((r) => r.status === "fail").map((r) => r.id);
++    if (failedIds.length === 0) return;
++    setBusy(true);
++    for (const id of failedIds) updateRun(id, { status: "pending", error: undefined, durationMs: undefined });
++    await Promise.all(failedIds.map((id) => executeOne(action, id)));
++    setBusy(false);
+   }
+ 
+-  async function navigateAll() {
+-    if (!text.trim()) return;
+-    await fanOut("Navigate", (id) => api.navigate(id, text.trim()));
+-    setPrompt(null); setText("");
++  function clearResults() {
++    setRuns(null);
+   }
+ 
+-  async function instructAll() {
+-    if (!text.trim()) return;
+-    await fanOut("Instruct", (id) => api.instruct(id, text.trim()));
+-    setPrompt(null); setText("");
+-  }
++  return (
++    <div className="sticky top-0 z-10 -mx-1 mb-4 rounded-md border border-border bg-card/95 backdrop-blur shadow-sm">
++      <div className="flex items-center gap-3 border-b border-border px-3 py-2 text-xs">
++        <span className="font-medium">{selectedIds.length} selected</span>
++        <Link
++          href={`/browsers/display?ids=${encodeURIComponent(selectedIds.join(","))}`}
++          className="text-[var(--accent)] underline-offset-2 hover:underline"
++        >
++          View live displays →
++        </Link>
++        <Button size="sm" variant="ghost" onClick={onClear} className="ml-auto">Clear selection</Button>
++      </div>
+ 
+-  async function screenshotAll() {
+-    await fanOut("Screenshot", (id) => api.screenshot(id));
+-  }
++      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
++        <select
++          value={actionId}
++          onChange={(e) => { setActionId(e.target.value); setValues({}); setRuns(null); }}
++          className="h-8 rounded border border-border bg-card px-2 text-xs"
++          disabled={busy}
++        >
++          {Object.entries(groups).map(([group, items]) =>
++            items.length === 0 ? null : (
++              <optgroup key={group} label={group}>
++                {items.map((a) => (
++                  <option key={a.id} value={a.id}>{a.label}</option>
++                ))}
++              </optgroup>
++            ),
++          )}
++        </select>
+ 
+-  return (
+-    <>
+-      <div className="sticky top-0 z-10 -mx-1 mb-4 flex items-center gap-2 rounded-md border border-border bg-card/90 backdrop-blur px-3 py-2 shadow-sm">
+-        <span className="text-xs font-medium">
+-          {selectedIds.length} selected
+-        </span>
+-        <div className="ml-2 h-5 w-px bg-border" />
+-        <Button size="sm" variant="secondary" onClick={() => setPrompt("navigate")} disabled={busy}>
+-          Navigate all
+-        </Button>
+-        <Button size="sm" variant="secondary" onClick={() => setPrompt("instruct")} disabled={busy}>
+-          Instruct all
+-        </Button>
+-        <Button size="sm" variant="secondary" onClick={screenshotAll} disabled={busy}>
+-          Screenshot all
+-        </Button>
+-        <Button size="sm" variant="danger" onClick={closeAll} disabled={busy}>
+-          Close selected
+-        </Button>
+-        <Button size="sm" variant="ghost" onClick={onClear} className="ml-auto">
+-          Clear
++        {action.fields.length === 0 ? (
++          <span className="text-[11px] text-muted-foreground">No parameters.</span>
++        ) : (
++          action.fields.map((f) => (
++            <Input
++              key={f.name}
++              type={f.kind === "number" ? "number" : "text"}
++              placeholder={f.placeholder}
++              mono={"mono" in f ? f.mono : false}
++              required={f.required}
++              value={values[f.name] ?? ""}
++              onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
++              className="flex-1 min-w-32"
++              disabled={busy}
++            />
++          ))
++        )}
++
++        <Button
++          size="sm"
++          variant={action.destructive ? "danger" : "primary"}
++          onClick={run}
++          loading={busy}
++        >
++          Run on {selectedIds.length}
+         </Button>
+       </div>
+-      <Modal
+-        open={prompt !== null}
+-        onClose={() => { setPrompt(null); setText(""); }}
+-        title={prompt === "navigate" ? "Navigate all" : "Instruct all"}
+-      >
+-        <div className="space-y-3">
+-          <Input
+-            value={text}
+-            onChange={(e) => setText(e.target.value)}
+-            placeholder={prompt === "navigate" ? "https://example.com" : "Click the sign-in link…"}
+-            mono={prompt === "navigate"}
+-            autoFocus
+-          />
+-          <p className="text-[11px] text-muted-foreground">
+-            Will be sent in parallel to {selectedIds.length} browser(s).
+-          </p>
+-          <div className="flex justify-end gap-2 pt-1">
+-            <Button
+-              variant="secondary"
+-              onClick={() => { setPrompt(null); setText(""); }}
+-            >
+-              Cancel
+-            </Button>
+-            <Button
+-              onClick={prompt === "navigate" ? navigateAll : instructAll}
+-              loading={busy}
+-            >
+-              Run
+-            </Button>
+-          </div>
+-        </div>
+-      </Modal>
+-    </>
++
++      {runs && (
++        <BatchResults
++          runs={runs}
++          busy={busy}
++          actionLabel={action.label}
++          onRetryFailed={retryFailed}
++          onClear={clearResults}
++        />
++      )}
++    </div>
+   );
+ }
+diff --git a/rusty-frontend/components/browsers/BatchResults.tsx b/rusty-frontend/components/browsers/BatchResults.tsx
+new file mode 100644
+index 0000000..cde1488
+--- /dev/null
++++ b/rusty-frontend/components/browsers/BatchResults.tsx
+@@ -0,0 +1,202 @@
++"use client";
++
++import { Button } from "@/components/ui/Button";
++import Link from "next/link";
++import { useState } from "react";
++
++export type RunStatus = "pending" | "ok" | "fail";
++
++export type RunRecord = {
++  id: string;
++  status: RunStatus;
++  durationMs?: number;
++  result?: unknown;
++  error?: string;
++};
++
++type Props = {
++  runs: RunRecord[];
++  busy: boolean;
++  actionLabel: string;
++  onRetryFailed: () => void;
++  onClear: () => void;
++};
++
++export function BatchResults({ runs, busy, actionLabel, onRetryFailed, onClear }: Props) {
++  const ok = runs.filter((r) => r.status === "ok").length;
++  const fail = runs.filter((r) => r.status === "fail").length;
++  const pending = runs.filter((r) => r.status === "pending").length;
++  const totalMs = runs
++    .filter((r) => r.durationMs !== undefined)
++    .reduce((s, r) => s + (r.durationMs ?? 0), 0);
++
++  return (
++    <div className="border-t border-border">
++      <div className="flex items-center gap-3 px-3 py-2 text-xs">
++        <span className="font-medium">{actionLabel}</span>
++        <span className="font-mono text-muted-foreground">
++          {ok} ok
++          {fail > 0 && <> · <span className="text-[var(--error)]">{fail} failed</span></>}
++          {pending > 0 && <> · <span className="text-muted-foreground">{pending} pending</span></>}
++          {runs.length > 0 && totalMs > 0 && <> · {Math.round(totalMs)}ms total</>}
++        </span>
++        <div className="ml-auto flex gap-1.5">
++          {fail > 0 && !busy && (
++            <Button size="sm" variant="secondary" onClick={onRetryFailed}>
++              Retry {fail} failed
++            </Button>
++          )}
++          <Button size="sm" variant="ghost" onClick={onClear}>Dismiss</Button>
++        </div>
++      </div>
++      <ul className="max-h-96 overflow-auto wb-scroll divide-y divide-border">
++        {runs.map((r) => <ResultRow key={r.id} run={r} />)}
++      </ul>
++    </div>
++  );
++}
++
++function ResultRow({ run }: { run: RunRecord }) {
++  const [expanded, setExpanded] = useState(false);
++  const preview = previewOf(run);
++
++  return (
++    <li className="px-3 py-2 text-xs">
++      <div className="flex items-center gap-2">
++        <StatusPill status={run.status} />
++        <Link
++          href={`/browsers/${run.id}`}
++          className="font-mono text-[10.5px] text-muted-foreground hover:text-foreground truncate max-w-56"
++        >
++          {run.id}
++        </Link>
++        {run.durationMs !== undefined && (
++          <span className="font-mono text-[10px] text-muted-foreground">
++            {Math.round(run.durationMs)}ms
++          </span>
++        )}
++        <span className="ml-auto flex items-center gap-1.5">
++          {preview && (
++            <button
++              type="button"
++              onClick={() => setExpanded((x) => !x)}
++              className="text-[10.5px] text-muted-foreground hover:text-foreground"
++            >
++              {expanded ? "hide" : "details"}
++            </button>
++          )}
++          {run.status === "ok" && (
++            <button
++              type="button"
++              onClick={() => copy(run.result)}
++              className="text-[10.5px] text-muted-foreground hover:text-foreground"
++            >
++              copy
++            </button>
++          )}
++        </span>
++      </div>
++      {!expanded && preview && (
++        <div className="mt-1 ml-7 truncate font-mono text-[10.5px] text-muted-foreground">
++          {preview}
++        </div>
++      )}
++      {expanded && (
++        <div className="mt-2 ml-7">
++          <ResultBody run={run} />
++        </div>
++      )}
++    </li>
++  );
++}
++
++function StatusPill({ status }: { status: RunStatus }) {
++  const styles =
++    status === "ok" ? "bg-[var(--success)]/15 text-[var(--success)]"
++    : status === "fail" ? "bg-[var(--error)]/15 text-[var(--error)]"
++    : "bg-muted text-muted-foreground";
++  const label = status === "ok" ? "OK" : status === "fail" ? "FAIL" : "…";
++  return (
++    <span className={`inline-flex h-5 min-w-9 items-center justify-center rounded px-1.5 font-mono text-[10px] font-semibold ${styles}`}>
++      {label}
++    </span>
++  );
++}
++
++function ResultBody({ run }: { run: RunRecord }) {
++  if (run.status === "fail") {
++    return (
++      <pre className="font-mono text-[10.5px] text-[var(--error)] whitespace-pre-wrap break-all max-h-64 overflow-auto wb-scroll">
++        {run.error}
++      </pre>
++    );
++  }
++
++  const screenshot = extractScreenshot(run.result);
++  if (screenshot) {
++    return (
++      <div className="rounded border border-border bg-black overflow-hidden max-w-md">
++        {/* eslint-disable-next-line @next/next/no-img-element */}
++        <img src={`data:image/jpeg;base64,${screenshot}`} alt="Screenshot" className="w-full h-auto" />
++      </div>
++    );
++  }
++
++  const html = extractHtml(run.result);
++  if (html) {
++    return (
++      <pre className="font-mono text-[10.5px] whitespace-pre-wrap break-all max-h-64 overflow-auto wb-scroll">
++        {html}
++      </pre>
++    );
++  }
++
++  return (
++    <pre className="font-mono text-[10.5px] whitespace-pre-wrap break-all max-h-64 overflow-auto wb-scroll">
++      {format(run.result)}
++    </pre>
++  );
++}
++
++function previewOf(run: RunRecord): string | null {
++  if (run.status === "fail") return run.error ?? "error";
++  if (run.status === "pending") return null;
++  const r = run.result;
++  if (r === null || r === undefined) return null;
++  if (typeof r === "string") return r.length > 120 ? r.slice(0, 120) + "…" : r;
++  if (typeof r === "object") {
++    const html = extractHtml(r);
++    if (html) return html.slice(0, 120) + (html.length > 120 ? "…" : "");
++    if (extractScreenshot(r)) return "<image>";
++    const compact = JSON.stringify(r);
++    return compact.length > 120 ? compact.slice(0, 120) + "…" : compact;
++  }
++  return String(r);
++}
++
++function extractScreenshot(value: unknown): string | null {
++  if (value && typeof value === "object" && "data" in value) {
++    const d = (value as { data: unknown }).data;
++    if (typeof d === "string" && d.length > 0) return d;
++  }
++  return null;
++}
++
++function extractHtml(value: unknown): string | null {
++  if (value && typeof value === "object" && "html" in value) {
++    const h = (value as { html: unknown }).html;
++    if (typeof h === "string") return h;
++  }
++  return null;
++}
++
++function format(value: unknown): string {
++  if (value === null || value === undefined) return "";
++  if (typeof value === "string") return value;
++  return JSON.stringify(value, null, 2);
++}
++
++function copy(value: unknown) {
++  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
++  navigator.clipboard?.writeText(text).catch(() => {});
++}
+diff --git a/rusty-frontend/components/browsers/DisplayStream.tsx b/rusty-frontend/components/browsers/DisplayStream.tsx
+index ec172bf..27721d6 100644
+--- a/rusty-frontend/components/browsers/DisplayStream.tsx
++++ b/rusty-frontend/components/browsers/DisplayStream.tsx
+@@ -1,11 +1,16 @@
+ "use client";
+ 
++import type RFBType from "@novnc/novnc/lib/rfb";
+ import { loadConfig } from "@/lib/config";
+ import { useEffect, useRef, useState } from "react";
+ 
+-type Props = { browserId: string };
++type Props = {
++  browserId: string;
++  viewOnly?: boolean;
++  className?: string;
++};
+ 
+-export function DisplayStream({ browserId: id }: Props) {
++export function DisplayStream({ browserId: id, viewOnly = false, className }: Props) {
+   const targetRef = useRef<HTMLDivElement>(null);
+   const [error, setError] = useState<string | null>(null);
+   const [connected, setConnected] = useState(false);
+@@ -22,14 +27,16 @@ export function DisplayStream({ browserId: id }: Props) {
+     let cancelled = false;
+ 
+     (async () => {
+-      const { default: RFB } = await import("@novnc/novnc/lib/rfb");
++      // @ts-expect-error @types/novnc__novnc only declares the @novnc/novnc/lib/rfb subpath,
++      // but the package's runtime `exports` field only allows the bare specifier.
++      const { default: RFB } = (await import("@novnc/novnc")) as { default: typeof RFBType };
+       if (cancelled) return;
+ 
+       const instance = new RFB(target, url, {
+         wsProtocols: cfg.apiKey ? [cfg.apiKey] : [],
+       });
+       instance.scaleViewport = true;
+-      instance.viewOnly = false;
++      instance.viewOnly = viewOnly;
+       instance.addEventListener("connect", () => setConnected(true));
+       instance.addEventListener("disconnect", (e: { detail?: { clean?: boolean } }) => {
+         setConnected(false);
+@@ -45,16 +52,20 @@ export function DisplayStream({ browserId: id }: Props) {
+       cancelled = true;
+       rfb?.disconnect();
+     };
+-  }, [id]);
++  }, [id, viewOnly]);
+ 
+   return (
+-    <div className="rounded-md border border-border bg-black overflow-hidden">
++    <div className={`relative rounded-md border border-border bg-black overflow-hidden ${className ?? ""}`}>
+       <div ref={targetRef} className="w-full aspect-video" />
+       {!connected && !error && (
+-        <div className="px-3 py-2 text-xs text-muted-foreground">Connecting…</div>
++        <div className="absolute inset-x-0 bottom-0 px-3 py-1 text-[10px] text-muted-foreground bg-black/60">
++          Connecting…
++        </div>
+       )}
+       {error && (
+-        <div className="px-3 py-2 text-xs text-[var(--error)]">{error}</div>
++        <div className="absolute inset-x-0 bottom-0 px-3 py-1 text-[10px] text-[var(--error)] bg-black/60">
++          {error}
++        </div>
+       )}
+     </div>
+   );
+diff --git a/rusty-frontend/lib/actionCatalog.ts b/rusty-frontend/lib/actionCatalog.ts
+new file mode 100644
+index 0000000..a69b960
+--- /dev/null
++++ b/rusty-frontend/lib/actionCatalog.ts
+@@ -0,0 +1,135 @@
++"use client";
++
++import { api } from "./api";
++
++export type ActionField =
++  | { kind: "text"; name: string; placeholder?: string; mono?: boolean; required?: boolean }
++  | { kind: "number"; name: string; placeholder?: string; required?: boolean };
++
++export type ActionGroup = "Navigation" | "Interaction" | "Inspection" | "Lifecycle" | "AI";
++
++export type ActionDef = {
++  id: string;
++  label: string;
++  group: ActionGroup;
++  destructive?: boolean;
++  fields: ActionField[];
++  run: (browserId: string, values: Record<string, string>) => Promise<unknown>;
++};
++
++const num = (s: string | undefined): number | undefined =>
++  s == null || s.trim() === "" ? undefined : Number(s);
++
++export const ACTIONS: ActionDef[] = [
++  {
++    id: "navigate", label: "Navigate", group: "Navigation",
++    fields: [{ kind: "text", name: "url", placeholder: "https://example.com", mono: true, required: true }],
++    run: (id, v) => api.navigate(id, v.url),
++  },
++  {
++    id: "click", label: "Click", group: "Interaction",
++    fields: [
++      { kind: "number", name: "x", placeholder: "x", required: true },
++      { kind: "number", name: "y", placeholder: "y", required: true },
++    ],
++    run: (id, v) => api.click(id, Number(v.x), Number(v.y)),
++  },
++  {
++    id: "node-click", label: "Node click", group: "Interaction",
++    fields: [{ kind: "number", name: "node_id", placeholder: "node_id", required: true }],
++    run: (id, v) => api.nodeClick(id, Number(v.node_id)),
++  },
++  {
++    id: "type", label: "Type", group: "Interaction",
++    fields: [
++      { kind: "text", name: "text", placeholder: "text", required: true },
++      { kind: "number", name: "node_id", placeholder: "node_id (optional)" },
++    ],
++    run: (id, v) => api.type(id, v.text, num(v.node_id)),
++  },
++  {
++    id: "scroll-by", label: "Scroll by", group: "Interaction",
++    fields: [{ kind: "number", name: "y", placeholder: "Y px", required: true }],
++    run: (id, v) => api.scrollBy(id, Number(v.y)),
++  },
++  {
++    id: "scroll-to", label: "Scroll to node", group: "Interaction",
++    fields: [{ kind: "number", name: "node_id", placeholder: "node_id", required: true }],
++    run: (id, v) => api.scrollTo(id, Number(v.node_id)),
++  },
++  {
++    id: "send-keys", label: "Send keys", group: "Interaction",
++    fields: [{ kind: "text", name: "keys", placeholder: "Enter, Tab, Ctrl+A…", mono: true, required: true }],
++    run: (id, v) => api.sendKeys(id, v.keys),
++  },
++  {
++    id: "hold-key", label: "Hold key", group: "Interaction",
++    fields: [{ kind: "text", name: "key", placeholder: "Shift, Control…", mono: true, required: true }],
++    run: (id, v) => api.holdKey(id, v.key),
++  },
++  {
++    id: "eval", label: "Eval JS", group: "Interaction",
++    fields: [{ kind: "text", name: "script", placeholder: "1 + 1", mono: true, required: true }],
++    run: (id, v) => api.evaluate(id, v.script),
++  },
++
++  {
++    id: "screenshot", label: "Screenshot", group: "Inspection", fields: [],
++    run: (id) => api.screenshot(id),
++  },
++  {
++    id: "fetch-html", label: "Fetch HTML", group: "Inspection",
++    fields: [{ kind: "number", name: "node_id", placeholder: "node_id (optional, full page)" }],
++    run: (id, v) => api.fetchHtml(id, num(v.node_id)),
++  },
++  {
++    id: "fetch-text", label: "Fetch text", group: "Inspection",
++    fields: [{ kind: "number", name: "node_id", placeholder: "node_id", required: true }],
++    run: (id, v) => api.fetchText(id, Number(v.node_id)),
++  },
++  {
++    id: "find-node", label: "Find node", group: "Inspection",
++    fields: [{ kind: "text", name: "selector", placeholder: "CSS selector", mono: true, required: true }],
++    run: (id, v) => api.findNode(id, v.selector),
++  },
++  {
++    id: "wait-for-node", label: "Wait for node", group: "Inspection",
++    fields: [
++      { kind: "text", name: "selector", placeholder: "CSS selector", mono: true, required: true },
++      { kind: "number", name: "timeout_ms", placeholder: "timeout ms", required: true },
++    ],
++    run: (id, v) => api.waitForNode(id, v.selector, Number(v.timeout_ms)),
++  },
++
++  {
++    id: "create-context", label: "Create context", group: "Lifecycle", fields: [],
++    run: (id) => api.createContext(id),
++  },
++  {
++    id: "close-context", label: "Close context", group: "Lifecycle",
++    fields: [{ kind: "text", name: "ctx", placeholder: "context id", mono: true, required: true }],
++    run: (id, v) => api.closeContext(id, v.ctx),
++  },
++  {
++    id: "close-browser", label: "Close browser", group: "Lifecycle", destructive: true, fields: [],
++    run: (id) => api.closeBrowser(id),
++  },
++
++  {
++    id: "instruct", label: "Instruct", group: "AI",
++    fields: [{ kind: "text", name: "instruction", placeholder: "Find the sign-up link and click it…", required: true }],
++    run: (id, v) => api.instruct(id, v.instruction),
++  },
++];
++
++export function getAction(id: string): ActionDef | undefined {
++  return ACTIONS.find((a) => a.id === id);
++}
++
++export function actionsByGroup(): Record<ActionGroup, ActionDef[]> {
++  const groups: Record<ActionGroup, ActionDef[]> = {
++    Navigation: [], Interaction: [], Inspection: [], Lifecycle: [], AI: [],
++  };
++  for (const a of ACTIONS) groups[a.group].push(a);
++  return groups;
++}

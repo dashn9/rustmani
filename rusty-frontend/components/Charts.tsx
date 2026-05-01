@@ -1,5 +1,6 @@
 "use client";
 
+import { ReactElement, useEffect, useState } from "react";
 import {
   Area,
   AreaChart as RAreaChart,
@@ -15,6 +16,23 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+
+// ResponsiveContainer reads its parent's bounding rect on first render and warns
+// "width(-1) and height(-1)" when the parent layout hasn't settled yet. Defer
+// the mount one tick so the wrapper's width:100% has resolved.
+function DeferredResponsive({ height, children }: { height: number; children: ReactElement }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return (
+    <div style={{ width: "100%", height }}>
+      {mounted && (
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+          {children}
+        </ResponsiveContainer>
+      )}
+    </div>
+  );
+}
 
 const AXIS = {
   fontSize: 10,
@@ -53,9 +71,8 @@ export function AreaChart({
 }: { data: AreaPoint[]; height?: number; accent?: string }) {
   if (data.length === 0) return <EmptyChart height={height} />;
   return (
-    <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-        <RAreaChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+    <DeferredResponsive height={height}>
+      <RAreaChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
           <defs>
             <linearGradient id="wb-area-fill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={accent} stopOpacity={0.4} />
@@ -76,8 +93,7 @@ export function AreaChart({
             activeDot={{ r: 4 }}
           />
         </RAreaChart>
-      </ResponsiveContainer>
-    </div>
+    </DeferredResponsive>
   );
 }
 
@@ -88,23 +104,21 @@ export function BarChart({
 }) {
   if (data.length === 0) return <EmptyChart height={height} />;
   return (
-    <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-        <RBarChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-          <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
-          <XAxis
-            dataKey="label"
-            tick={AXIS}
-            tickLine={false}
-            axisLine={{ stroke: "var(--border)" }}
-            tickFormatter={(s: string) => (s?.length > 8 ? `${s.slice(0, 6)}…` : s)}
-          />
-          <YAxis tick={AXIS} tickLine={false} axisLine={false} width={32} allowDecimals={false} />
-          <Tooltip {...TOOLTIP} />
-          <Bar dataKey="value" fill={accent} radius={[3, 3, 0, 0]} maxBarSize={48} />
-        </RBarChart>
-      </ResponsiveContainer>
-    </div>
+    <DeferredResponsive height={height}>
+      <RBarChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+        <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
+        <XAxis
+          dataKey="label"
+          tick={AXIS}
+          tickLine={false}
+          axisLine={{ stroke: "var(--border)" }}
+          tickFormatter={(s: string) => (s?.length > 8 ? `${s.slice(0, 6)}…` : s)}
+        />
+        <YAxis tick={AXIS} tickLine={false} axisLine={false} width={32} allowDecimals={false} />
+        <Tooltip {...TOOLTIP} />
+        <Bar dataKey="value" fill={accent} radius={[3, 3, 0, 0]} maxBarSize={48} />
+      </RBarChart>
+    </DeferredResponsive>
   );
 }
 
@@ -126,39 +140,37 @@ export function DonutChart({
   if (total === 0) return <EmptyChart height={height} />;
 
   return (
-    <div style={{ width: "100%", height }}>
-      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-        <RPieChart>
-          <Pie
-            data={data}
-            dataKey="value"
-            nameKey="label"
-            innerRadius="58%"
-            outerRadius="86%"
-            paddingAngle={1}
-            stroke="var(--card)"
-            strokeWidth={2}
-          >
-            {data.map((d, i) => (
-              <Cell
-                key={d.label}
-                fill={d.color ?? DONUT_COLORS[i % DONUT_COLORS.length]}
-              />
-            ))}
-          </Pie>
-          <Tooltip {...TOOLTIP} />
-          <Legend
-            verticalAlign="bottom"
-            height={28}
-            iconType="square"
-            iconSize={8}
-            wrapperStyle={{ fontSize: 11, fontFamily: "var(--font-mono)" }}
-            formatter={(value: string) => (
-              <span className="text-muted-foreground capitalize">{value}</span>
-            )}
-          />
-        </RPieChart>
-      </ResponsiveContainer>
-    </div>
+    <DeferredResponsive height={height}>
+      <RPieChart>
+        <Pie
+          data={data}
+          dataKey="value"
+          nameKey="label"
+          innerRadius="58%"
+          outerRadius="86%"
+          paddingAngle={1}
+          stroke="var(--card)"
+          strokeWidth={2}
+        >
+          {data.map((d, i) => (
+            <Cell
+              key={d.label}
+              fill={d.color ?? DONUT_COLORS[i % DONUT_COLORS.length]}
+            />
+          ))}
+        </Pie>
+        <Tooltip {...TOOLTIP} />
+        <Legend
+          verticalAlign="bottom"
+          height={28}
+          iconType="square"
+          iconSize={8}
+          wrapperStyle={{ fontSize: 11, fontFamily: "var(--font-mono)" }}
+          formatter={(value: string) => (
+            <span className="text-muted-foreground capitalize">{value}</span>
+          )}
+        />
+      </RPieChart>
+    </DeferredResponsive>
   );
 }

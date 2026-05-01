@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { ACTIONS, ActionDef, actionsByGroup, getAction } from "@/lib/actionCatalog";
 import { describeError } from "@/lib/config";
-import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
+
+const GROUPED = actionsByGroup();
 
 type Props = {
   selectedIds: string[];
@@ -23,7 +24,6 @@ export function BatchActionBar({ selectedIds, onClear, onChanged }: Props) {
   const [runs, setRuns] = useState<RunRecord[] | null>(null);
 
   const action = getAction(actionId) ?? ACTIONS[0];
-  const groups = useMemo(actionsByGroup, []);
 
   function updateRun(id: string, patch: Partial<RunRecord>) {
     setRuns((prev) =>
@@ -74,7 +74,7 @@ export function BatchActionBar({ selectedIds, onClear, onChanged }: Props) {
       message: `${action.label}: ${ok} ok${fail ? ` · ${fail} failed` : ""}`,
     });
     onChanged();
-    if (action.id === "close-browser" && fail === 0) onClear();
+    if (action.clearSelectionOnSuccess && fail === 0) onClear();
   }
 
   async function retryFailed() {
@@ -95,12 +95,6 @@ export function BatchActionBar({ selectedIds, onClear, onChanged }: Props) {
     <div className="sticky top-0 z-10 -mx-1 mb-4 rounded-md border border-border bg-card/95 backdrop-blur shadow-sm">
       <div className="flex items-center gap-3 border-b border-border px-3 py-2 text-xs">
         <span className="font-medium">{selectedIds.length} selected</span>
-        <Link
-          href={`/browsers/display?ids=${encodeURIComponent(selectedIds.join(","))}`}
-          className="text-[var(--accent)] underline-offset-2 hover:underline"
-        >
-          View live displays →
-        </Link>
         <Button size="sm" variant="ghost" onClick={onClear} className="ml-auto">Clear selection</Button>
       </div>
 
@@ -111,7 +105,7 @@ export function BatchActionBar({ selectedIds, onClear, onChanged }: Props) {
           className="h-8 rounded border border-border bg-card px-2 text-xs"
           disabled={busy}
         >
-          {Object.entries(groups).map(([group, items]) =>
+          {Object.entries(GROUPED).map(([group, items]) =>
             items.length === 0 ? null : (
               <optgroup key={group} label={group}>
                 {items.map((a) => (

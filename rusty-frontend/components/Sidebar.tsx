@@ -6,7 +6,6 @@ import { cn } from "@/lib/cn";
 import { CountBadge } from "@/components/ui/Badge";
 import {
   IconBrowsers,
-  IconLogo,
   IconLogs,
   IconNodes,
   IconOverview,
@@ -39,7 +38,8 @@ export function Sidebar() {
   return (
     <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col bg-wb text-wb-inverse">
       <div className="flex items-center gap-2.5 px-5 h-14 border-b border-white/10">
-        <IconLogo size={22} className="text-accent" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logos/rusty-browser_inv.png" alt="" width={22} height={22} className="block" />
         <span className="text-sm font-semibold tracking-tight">Rusty Browser</span>
       </div>
       <nav className="flex-1 p-3 space-y-0.5">

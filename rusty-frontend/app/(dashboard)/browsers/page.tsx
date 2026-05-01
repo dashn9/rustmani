@@ -13,7 +13,6 @@ import { api } from "@/lib/api";
 import { describeError } from "@/lib/config";
 import { usePolling } from "@/lib/hooks";
 import { pushRecentExecution } from "@/lib/recentExecutions";
-import Link from "next/link";
 import { useState } from "react";
 
 export default function BrowsersPage() {
@@ -22,6 +21,7 @@ export default function BrowsersPage() {
     (s) => api.listBrowsers(s), 4000, [],
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [displayed, setDisplayed] = useState<Set<string>>(new Set());
   const [spawning, setSpawning] = useState(false);
 
   const list = data ?? [];
@@ -34,6 +34,14 @@ export default function BrowsersPage() {
 
   function toggleSelect(id: string) {
     setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleDisplay(id: string) {
+    setDisplayed((s) => {
       const next = new Set(s);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
@@ -61,9 +69,6 @@ export default function BrowsersPage() {
         description="Spawn, control, and observe agents."
         actions={
           <>
-            <Link href="/browsers/display">
-              <Button variant="secondary" size="sm">Live displays</Button>
-            </Link>
             <Button variant="secondary" size="sm" onClick={refetch} disabled={loading}>
               <IconRefresh size={14} className={loading ? "animate-spin" : ""} /> Refresh
             </Button>
@@ -95,8 +100,10 @@ export default function BrowsersPage() {
             {error.message}
           </div>
         ) : loading && !data ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {[0, 1, 2].map((i) => <Skeleton key={i} className="h-32 w-full" />)}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-32 w-full" />
+            ))}
           </div>
         ) : list.length === 0 ? (
           <EmptyState
@@ -110,13 +117,17 @@ export default function BrowsersPage() {
             }
           />
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {list.map((b) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            {[...list]
+              .sort((a, b) => Number(displayed.has(b.execution_id)) - Number(displayed.has(a.execution_id)))
+              .map((b) => (
               <BrowserCard
                 key={b.execution_id}
                 browser={b}
                 selected={selected.has(b.execution_id)}
+                showDisplay={displayed.has(b.execution_id)}
                 onToggleSelect={toggleSelect}
+                onToggleDisplay={toggleDisplay}
               />
             ))}
           </div>

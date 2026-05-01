@@ -13,6 +13,8 @@ export type ActionDef = {
   label: string;
   group: ActionGroup;
   destructive?: boolean;
+  /** Clear the selection after a fully-successful batch run (e.g. closed browsers no longer exist). */
+  clearSelectionOnSuccess?: boolean;
   fields: ActionField[];
   run: (browserId: string, values: Record<string, string>) => Promise<unknown>;
 };
@@ -111,7 +113,8 @@ export const ACTIONS: ActionDef[] = [
     run: (id, v) => api.closeContext(id, v.ctx),
   },
   {
-    id: "close-browser", label: "Close browser", group: "Lifecycle", destructive: true, fields: [],
+    id: "close-browser", label: "Close browser", group: "Lifecycle",
+    destructive: true, clearSelectionOnSuccess: true, fields: [],
     run: (id) => api.closeBrowser(id),
   },
 

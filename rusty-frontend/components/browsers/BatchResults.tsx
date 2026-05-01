@@ -1,8 +1,14 @@
 "use client";
 
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import Link from "next/link";
 import { useState } from "react";
+
+const PRE_CLASS = "font-mono text-[10.5px] whitespace-pre-wrap break-all max-h-64 overflow-auto wb-scroll";
+
+const STATUS_TONE = { ok: "success", fail: "error", pending: "neutral" } as const;
+const STATUS_LABEL = { ok: "OK", fail: "FAIL", pending: "…" } as const;
 
 export type RunStatus = "pending" | "ok" | "fail";
 
@@ -111,28 +117,15 @@ function ResultRow({ run }: { run: RunRecord }) {
 }
 
 function StatusPill({ status }: { status: RunStatus }) {
-  const styles =
-    status === "ok" ? "bg-[var(--success)]/15 text-[var(--success)]"
-    : status === "fail" ? "bg-[var(--error)]/15 text-[var(--error)]"
-    : "bg-muted text-muted-foreground";
-  const label = status === "ok" ? "OK" : status === "fail" ? "FAIL" : "…";
-  return (
-    <span className={`inline-flex h-5 min-w-9 items-center justify-center rounded px-1.5 font-mono text-[10px] font-semibold ${styles}`}>
-      {label}
-    </span>
-  );
+  return <Badge tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Badge>;
 }
 
 function ResultBody({ run }: { run: RunRecord }) {
   if (run.status === "fail") {
-    return (
-      <pre className="font-mono text-[10.5px] text-[var(--error)] whitespace-pre-wrap break-all max-h-64 overflow-auto wb-scroll">
-        {run.error}
-      </pre>
-    );
+    return <pre className={`${PRE_CLASS} text-[var(--error)]`}>{run.error}</pre>;
   }
 
-  const screenshot = extractScreenshot(run.result);
+  const screenshot = extractStringField(run.result, "data");
   if (screenshot) {
     return (
       <div className="rounded border border-border bg-black overflow-hidden max-w-md">
@@ -142,20 +135,8 @@ function ResultBody({ run }: { run: RunRecord }) {
     );
   }
 
-  const html = extractHtml(run.result);
-  if (html) {
-    return (
-      <pre className="font-mono text-[10.5px] whitespace-pre-wrap break-all max-h-64 overflow-auto wb-scroll">
-        {html}
-      </pre>
-    );
-  }
-
-  return (
-    <pre className="font-mono text-[10.5px] whitespace-pre-wrap break-all max-h-64 overflow-auto wb-scroll">
-      {format(run.result)}
-    </pre>
-  );
+  const html = extractStringField(run.result, "html");
+  return <pre className={PRE_CLASS}>{html ?? format(run.result)}</pre>;
 }
 
 function previewOf(run: RunRecord): string | null {
@@ -163,29 +144,24 @@ function previewOf(run: RunRecord): string | null {
   if (run.status === "pending") return null;
   const r = run.result;
   if (r === null || r === undefined) return null;
-  if (typeof r === "string") return r.length > 120 ? r.slice(0, 120) + "…" : r;
+  if (typeof r === "string") return truncate(r);
   if (typeof r === "object") {
-    const html = extractHtml(r);
-    if (html) return html.slice(0, 120) + (html.length > 120 ? "…" : "");
-    if (extractScreenshot(r)) return "<image>";
-    const compact = JSON.stringify(r);
-    return compact.length > 120 ? compact.slice(0, 120) + "…" : compact;
+    const html = extractStringField(r, "html");
+    if (html) return truncate(html);
+    if (extractStringField(r, "data")) return "<image>";
+    return truncate(JSON.stringify(r));
   }
   return String(r);
 }
 
-function extractScreenshot(value: unknown): string | null {
-  if (value && typeof value === "object" && "data" in value) {
-    const d = (value as { data: unknown }).data;
-    if (typeof d === "string" && d.length > 0) return d;
-  }
-  return null;
+function truncate(s: string, max = 120): string {
+  return s.length > max ? s.slice(0, max) + "…" : s;
 }
 
-function extractHtml(value: unknown): string | null {
-  if (value && typeof value === "object" && "html" in value) {
-    const h = (value as { html: unknown }).html;
-    if (typeof h === "string") return h;
+function extractStringField(value: unknown, key: string): string | null {
+  if (value && typeof value === "object" && key in value) {
+    const v = (value as Record<string, unknown>)[key];
+    if (typeof v === "string" && v.length > 0) return v;
   }
   return null;
 }

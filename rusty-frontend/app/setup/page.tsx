@@ -2,7 +2,6 @@
 
 import { Button } from "@/components/ui/Button";
 import { Input, Label, SecretInput } from "@/components/ui/Input";
-import { IconLogo } from "@/components/ui/Icon";
 import { connect, DEFAULT_SERVER_URL, describeError } from "@/lib/config";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
@@ -31,7 +30,8 @@ export default function SetupPage() {
     <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
       <aside className="relative hidden lg:flex flex-col justify-between p-12 bg-wb text-wb-inverse overflow-hidden">
         <div className="relative z-10 flex items-center gap-2.5">
-          <IconLogo size={26} className="text-accent" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logos/rusty-browser_inv.png" alt="" width={26} height={26} className="block" />
           <span className="text-base font-semibold tracking-tight">Rusty Browser</span>
         </div>
         <div className="relative z-10 max-w-md">
@@ -59,7 +59,8 @@ export default function SetupPage() {
       <section className="flex flex-col justify-center px-6 sm:px-12 py-12">
         <form onSubmit={onSubmit} className="mx-auto w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-2 mb-8">
-            <IconLogo size={22} className="text-wb" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logos/rusty-browser-black.png" alt="" width={22} height={22} className="block" />
             <span className="text-sm font-semibold">Rusty Browser</span>
           </div>
           <h2 className="text-2xl font-semibold tracking-tight">Connect</h2>

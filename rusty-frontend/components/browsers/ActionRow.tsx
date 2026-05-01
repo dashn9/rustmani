@@ -2,13 +2,11 @@
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { ActionField } from "@/lib/actionCatalog";
 import { describeError } from "@/lib/config";
 import { isValidElement, useState } from "react";
 
-export type ActionField =
-  | { kind: "text"; name: string; placeholder?: string; mono?: boolean; required?: boolean }
-  | { kind: "number"; name: string; placeholder?: string; required?: boolean }
-  | { kind: "textarea"; name: string; placeholder?: string; mono?: boolean; required?: boolean };
+export type { ActionField };
 
 type Values = Record<string, string>;
 
