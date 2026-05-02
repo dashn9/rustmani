@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/Button";
 import { Input, Label, SecretInput } from "@/components/ui/Input";
-import { connect, DEFAULT_SERVER_URL, describeError } from "@/lib/config";
+import { connect, DEFAULT_FLUX_URL, DEFAULT_SERVER_URL, describeError } from "@/lib/config";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
@@ -10,6 +10,8 @@ export default function SetupPage() {
   const router = useRouter();
   const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER_URL);
   const [apiKey, setApiKey] = useState("");
+  const [fluxUrl, setFluxUrl] = useState("");
+  const [fluxKey, setFluxKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
 
@@ -18,7 +20,12 @@ export default function SetupPage() {
     setError(null);
     setConnecting(true);
     try {
-      await connect({ serverUrl, apiKey });
+      await connect({
+        serverUrl,
+        apiKey,
+        fluxUrl: fluxUrl.trim() || undefined,
+        fluxKey: fluxKey.trim() || undefined,
+      });
       router.replace("/overview");
     } catch (e) {
       setError(describeError(e));
@@ -93,6 +100,37 @@ export default function SetupPage() {
                 Matches a value in <code className="font-mono">api_keys</code> in rusty.yaml.
               </p>
             </div>
+
+            <details className="group rounded-md border border-border">
+              <summary className="cursor-pointer list-none select-none px-3 py-2 text-xs text-muted-foreground hover:text-foreground flex items-center justify-between">
+                <span>Other settings</span>
+                <span className="text-[10px] font-mono transition-transform group-open:rotate-90">›</span>
+              </summary>
+              <div className="space-y-4 border-t border-border p-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="flux-url">Flux URL</Label>
+                  <Input
+                    id="flux-url"
+                    value={fluxUrl}
+                    onChange={(e) => setFluxUrl(e.target.value)}
+                    placeholder={DEFAULT_FLUX_URL}
+                    mono
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="flux-key">Flux Key</Label>
+                  <SecretInput
+                    id="flux-key"
+                    value={fluxKey}
+                    onChange={(e) => setFluxKey(e.target.value)}
+                    placeholder="•••••••••"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Optional. Used by the Flux dashboard panel.
+                  </p>
+                </div>
+              </div>
+            </details>
           </div>
 
           {error && (

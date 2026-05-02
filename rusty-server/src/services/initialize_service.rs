@@ -146,7 +146,7 @@ fn build_function_yaml(
     let spec = FunctionSpec {
         name: name.to_string(),
         handler: handler.to_string(),
-        resources: Resources { cpu: 1, memory: 2048 },
+        resources: Resources { cpu: 1, memory: 800 },
         timeout: 0,
         max_concurrency: 200,
         max_concurrency_behaviour: "wait".to_string(),
