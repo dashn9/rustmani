@@ -13,7 +13,7 @@ import { api } from "@/lib/api";
 import { describeError } from "@/lib/config";
 import { usePolling } from "@/lib/hooks";
 import { pushRecentExecution } from "@/lib/recentExecutions";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 export default function BrowsersPage() {
   const toast = useToast();
@@ -23,6 +23,8 @@ export default function BrowsersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [displayed, setDisplayed] = useState<Set<string>>(new Set());
   const [spawning, setSpawning] = useState(false);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [selBox, setSelBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   const list = data ?? [];
   const counts = {
@@ -47,6 +49,56 @@ export default function BrowsersPage() {
       return next;
     });
   }
+
+  function onGridMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    if ((e.target as Element).closest("a,button,input,label")) return;
+    const ox = e.clientX;
+    const oy = e.clientY;
+
+    function onMove(ev: MouseEvent) {
+      setSelBox({
+        x: Math.min(ev.clientX, ox),
+        y: Math.min(ev.clientY, oy),
+        w: Math.abs(ev.clientX - ox),
+        h: Math.abs(ev.clientY - oy),
+      });
+    }
+
+    function onUp(ev: MouseEvent) {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const box = {
+        x: Math.min(ev.clientX, ox),
+        y: Math.min(ev.clientY, oy),
+        w: Math.abs(ev.clientX - ox),
+        h: Math.abs(ev.clientY - oy),
+      };
+      setSelBox(null);
+      if (box.w < 6 || box.h < 6 || !gridRef.current) return;
+      const ids: string[] = [];
+      gridRef.current.querySelectorAll<HTMLElement>("[data-browser-id]").forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (!(box.x + box.w < r.left || box.x > r.right || box.y + box.h < r.top || box.y > r.bottom)) {
+          const id = el.dataset.browserId;
+          if (id) ids.push(id);
+        }
+      });
+      if (ids.length) setSelected(new Set(ids));
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  function showDisplayForSelected() {
+    setDisplayed((d) => {
+      const next = new Set(d);
+      selected.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  const displayableCount = Array.from(selected).filter((id) => !displayed.has(id)).length;
 
   async function spawn() {
     setSpawning(true);
@@ -92,6 +144,8 @@ export default function BrowsersPage() {
             selectedIds={Array.from(selected)}
             onClear={() => setSelected(new Set())}
             onChanged={refetch}
+            onShowDisplay={displayableCount > 0 ? showDisplayForSelected : undefined}
+            displayableCount={displayableCount}
           />
         )}
 
@@ -100,7 +154,7 @@ export default function BrowsersPage() {
             {error.message}
           </div>
         ) : loading && !data ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+          <div className="grid gap-4 items-start grid-cols-[repeat(auto-fill,minmax(360px,1fr))]">
             {[0, 1, 2, 3].map((i) => (
               <Skeleton key={i} className="h-32 w-full" />
             ))}
@@ -117,20 +171,32 @@ export default function BrowsersPage() {
             }
           />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+          <div
+            ref={gridRef}
+            className="grid gap-4 items-start grid-cols-[repeat(auto-fill,minmax(360px,1fr))] select-none"
+            onMouseDown={onGridMouseDown}
+          >
             {[...list]
               .sort((a, b) => Number(displayed.has(b.execution_id)) - Number(displayed.has(a.execution_id)))
               .map((b) => (
-              <BrowserCard
-                key={b.execution_id}
-                browser={b}
-                selected={selected.has(b.execution_id)}
-                showDisplay={displayed.has(b.execution_id)}
-                onToggleSelect={toggleSelect}
-                onToggleDisplay={toggleDisplay}
-              />
+              <div key={b.execution_id} data-browser-id={b.execution_id}>
+                <BrowserCard
+                  browser={b}
+                  selected={selected.has(b.execution_id)}
+                  showDisplay={displayed.has(b.execution_id)}
+                  onToggleSelect={toggleSelect}
+                  onToggleDisplay={toggleDisplay}
+                />
+              </div>
             ))}
           </div>
+        )}
+
+        {selBox && selBox.w > 3 && selBox.h > 3 && (
+          <div
+            className="pointer-events-none fixed z-50 rounded-sm border border-wb bg-wb/10"
+            style={{ left: selBox.x, top: selBox.y, width: selBox.w, height: selBox.h }}
+          />
         )}
       </div>
 

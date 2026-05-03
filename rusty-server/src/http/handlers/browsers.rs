@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::IntoResponse;
@@ -261,17 +260,23 @@ pub async fn instruct(
     Path(execution_id): Path<String>,
     Json(req): Json<InstructRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    if state.instruct_running.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
-        return Err(AppError::Conflict("an instruction is already running".to_string()));
+    {
+        let mut locks = state.instruct_locks.lock().unwrap();
+        if !locks.insert(execution_id.clone()) {
+            return Err(AppError::Conflict("an instruction is already running for this browser".to_string()));
+        }
     }
     let svc = svc(&state);
-    svc.get_browser(&execution_id).await?;
+    if let Err(e) = svc.get_browser(&execution_id).await {
+        state.instruct_locks.lock().unwrap().remove(&execution_id);
+        return Err(e);
+    }
     let id = execution_id.clone();
     tokio::spawn(async move {
         if let Err(e) = svc.instruct(&id, &req.instruction).await {
             tracing::error!("instruct {id} failed: {e}");
         }
-        state.instruct_running.store(false, Ordering::Release);
+        state.instruct_locks.lock().unwrap().remove(&id);
     });
     Ok((StatusCode::ACCEPTED, Json(serde_json::json!({ "execution_id": execution_id, "status": "running" }))))
 }

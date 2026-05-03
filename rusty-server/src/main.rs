@@ -22,7 +22,7 @@ pub struct AppState {
     pub flux: FluxClient,
     pub ai_provider: Box<dyn rusty_common::ai::AIProvider>,
     pub public_ip: String,
-    pub instruct_running: std::sync::atomic::AtomicBool,
+    pub instruct_locks: std::sync::Mutex<std::collections::HashSet<String>>,
     pub ui_map_cache: std::sync::Mutex<std::collections::HashMap<String, Vec<UiNode>>>,
 }
 
@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
         flux,
         ai_provider,
         public_ip,
-        instruct_running: std::sync::atomic::AtomicBool::new(false),
+        instruct_locks: std::sync::Mutex::new(std::collections::HashSet::new()),
         ui_map_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
 

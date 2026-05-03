@@ -14,9 +14,11 @@ type Props = {
   selectedIds: string[];
   onClear: () => void;
   onChanged: () => void;
+  onShowDisplay?: () => void;
+  displayableCount?: number;
 };
 
-export function BatchActionBar({ selectedIds, onClear, onChanged }: Props) {
+export function BatchActionBar({ selectedIds, onClear, onChanged, onShowDisplay, displayableCount }: Props) {
   const toast = useToast();
   const [actionId, setActionId] = useState<string>(ACTIONS[0].id);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -95,6 +97,11 @@ export function BatchActionBar({ selectedIds, onClear, onChanged }: Props) {
     <div className="sticky top-0 z-10 -mx-1 mb-4 rounded-md border border-border bg-card/95 backdrop-blur shadow-sm">
       <div className="flex items-center gap-3 border-b border-border px-3 py-2 text-xs">
         <span className="font-medium">{selectedIds.length} selected</span>
+        {onShowDisplay && (
+          <Button size="sm" variant="secondary" onClick={onShowDisplay}>
+            Show display ({displayableCount})
+          </Button>
+        )}
         <Button size="sm" variant="ghost" onClick={onClear} className="ml-auto">Clear selection</Button>
       </div>
 

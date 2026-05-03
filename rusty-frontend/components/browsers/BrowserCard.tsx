@@ -23,7 +23,7 @@ export function BrowserCard({
       className={cn(
         "relative flex flex-col overflow-hidden transition-all hover:border-wb-300",
         selected && "ring-2 ring-wb ring-offset-2 ring-offset-background border-wb",
-        showDisplay && "sm:col-span-2 sm:mx-auto sm:w-4/5",
+        showDisplay && "",
       )}
     >
       <div
