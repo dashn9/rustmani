@@ -67,23 +67,25 @@ impl BrowserService {
             .ok_or_else(|| AppError::Browser(BrowserError::NotFound(execution_id.to_string())))
     }
 
-    pub async fn delete_browser(&self, execution_id: &str) -> Result<(), AppError> {
-        tracing::info!("delete execution_id={execution_id}");
-        // Agent calls process::exit(0) on CloseBrowser — it may exit before replying
-        let _ = self.exec(execution_id, "", Action::CloseBrowser(CloseBrowser {})).await;
+    pub async fn delete_browser(&self, execution_id: &str, force: bool) -> Result<(), AppError> {
+        tracing::info!("delete execution_id={execution_id} force={force}");
+        if !force {
+            // Agent calls process::exit(0) on CloseBrowser — it may exit before replying
+            let _ = self.exec(execution_id, "", Action::CloseBrowser(CloseBrowser {})).await;
+        }
         self.state.redis.remove_browser(execution_id).await?;
         tracing::info!("deleted execution_id={execution_id}");
         Ok(())
     }
 
-    pub async fn delete_all_browsers(&self) -> Result<Vec<serde_json::Value>, AppError> {
+    pub async fn delete_all_browsers(&self, force: bool) -> Result<Vec<serde_json::Value>, AppError> {
         let browsers = self.state.redis.list_browsers().await?;
         let mut set = tokio::task::JoinSet::new();
         for b in &browsers {
             let svc = BrowserService::new(self.state.clone());
             let browser = b.clone();
             set.spawn(async move {
-                let ok = svc.delete_browser(&browser.execution_id).await.is_ok();
+                let ok = svc.delete_browser(&browser.execution_id, force).await.is_ok();
                 serde_json::json!({
                     "execution_id": browser.execution_id,
                     "browser_id": browser.browser_id,
@@ -175,8 +177,8 @@ impl BrowserService {
         self.exec(execution_id, "", Action::HoldKey(HoldKey { key, duration_ms })).await
     }
 
-    pub async fn teardown(&self) -> Result<serde_json::Value, AppError> {
-        let browsers = self.delete_all_browsers().await?;
+    pub async fn teardown(&self, force: bool) -> Result<serde_json::Value, AppError> {
+        let browsers = self.delete_all_browsers(force).await?;
         let nodes_terminated = self.state.flux.terminate_all_nodes().await.is_ok();
         Ok(serde_json::json!({
             "browsers": browsers,

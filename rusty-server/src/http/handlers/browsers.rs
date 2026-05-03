@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::response::IntoResponse;
-use axum::{extract::Path, extract::State, http::StatusCode, Json};
+use axum::{extract::Path, extract::Query, extract::State, http::StatusCode, Json};
 use futures::{SinkExt, StreamExt};
 use rusty_proto::DisplayChunk;
 use serde::Deserialize;
@@ -42,18 +41,26 @@ pub async fn get_browser(
     Ok(Json(serde_json::json!(browser)))
 }
 
+#[derive(Deserialize)]
+pub struct ForceQuery {
+    #[serde(default)]
+    pub force: bool,
+}
+
 pub async fn delete_browser(
     State(state): State<Arc<AppState>>,
     Path(execution_id): Path<String>,
+    Query(q): Query<ForceQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    svc(&state).delete_browser(&execution_id).await?;
+    svc(&state).delete_browser(&execution_id, q.force).await?;
     Ok(Json(serde_json::json!({ "deleted": execution_id })))
 }
 
 pub async fn delete_all_browsers(
     State(state): State<Arc<AppState>>,
+    Query(q): Query<ForceQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let log = svc(&state).delete_all_browsers().await?;
+    let log = svc(&state).delete_all_browsers(q.force).await?;
     Ok(Json(serde_json::json!({ "deleted": log })))
 }
 
@@ -371,8 +378,9 @@ pub async fn get_ui_map_diff(
 
 pub async fn teardown(
     State(state): State<Arc<AppState>>,
+    Query(q): Query<ForceQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let result = svc(&state).teardown().await?;
+    let result = svc(&state).teardown(q.force).await?;
     Ok(Json(result))
 }
 

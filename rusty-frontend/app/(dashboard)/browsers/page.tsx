@@ -5,7 +5,7 @@ import { BrowserCard } from "@/components/browsers/BrowserCard";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { IconBrowsers, IconPlus, IconRefresh } from "@/components/ui/Icon";
+import { IconBrowsers, IconPlus, IconRefresh, IconTrash } from "@/components/ui/Icon";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Stat } from "@/components/ui/Stat";
 import { useToast } from "@/components/ui/Toast";
@@ -23,6 +23,7 @@ export default function BrowsersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [displayed, setDisplayed] = useState<Set<string>>(new Set());
   const [spawning, setSpawning] = useState(false);
+  const [closingAll, setClosingAll] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   const [selBox, setSelBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
@@ -100,6 +101,22 @@ export default function BrowsersPage() {
 
   const displayableCount = Array.from(selected).filter((id) => !displayed.has(id)).length;
 
+  async function closeAll() {
+    if (!confirm(`Close all ${counts.total} browser(s)?`)) return;
+    setClosingAll(true);
+    try {
+      await api.closeAllBrowsers();
+      toast.push({ tone: "success", message: "All browsers closed." });
+      setSelected(new Set());
+      setDisplayed(new Set());
+      refetch();
+    } catch (e) {
+      toast.push({ tone: "error", message: describeError(e) });
+    } finally {
+      setClosingAll(false);
+    }
+  }
+
   async function spawn() {
     setSpawning(true);
     try {
@@ -124,6 +141,11 @@ export default function BrowsersPage() {
             <Button variant="secondary" size="sm" onClick={refetch} disabled={loading}>
               <IconRefresh size={14} className={loading ? "animate-spin" : ""} /> Refresh
             </Button>
+            {counts.total > 0 && (
+              <Button variant="danger" size="sm" onClick={closeAll} loading={closingAll}>
+                <IconTrash size={14} /> Close all
+              </Button>
+            )}
             <Button size="sm" onClick={spawn} loading={spawning}>
               <IconPlus size={14} /> Spawn
             </Button>
