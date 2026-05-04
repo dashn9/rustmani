@@ -77,7 +77,7 @@ pub struct ChromeBrowserConfig {
 }
 
 fn default_enable_display() -> bool {
-    true
+    false
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -60,7 +60,7 @@ pub struct ChromeBrowserLaunchConfig {
 }
 
 fn default_enable_display() -> bool {
-    true
+    false
 }
 
 impl ChromeBrowserLaunchConfig {

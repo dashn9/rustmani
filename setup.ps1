@@ -8,7 +8,9 @@
     .\setup.ps1
 #>
 [CmdletBinding()]
-param()
+param(
+    [switch]$ForceInstall
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -18,7 +20,6 @@ $RustyRepo             = "dashn9/rusty-browser"
 $FluxRepo              = "dashn9/serverless-flux"
 $ServerlessAgentRepo   = "dashn9/serverless-agent"
 $NodeMinMajor = 18
-$GhHeaders    = @{ "User-Agent" = "rusty-browser-setup"; "Accept" = "application/vnd.github+json" }
 
 # ── Component versions ────────────────────────────────────────────────────────
 
@@ -85,30 +86,15 @@ function New-RandomKey {
     [System.Convert]::ToBase64String($b) -replace '[/+=]', ''
 }
 
-function Get-LatestRelease([string]$repo) {
-    Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers $GhHeaders
-}
-
 function Save-Asset([string]$url, [string]$dest) {
-    $tmp = "$dest.tmp"
     try {
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("User-Agent", "rusty-browser-setup")
-        $wc.DownloadFile($url, $tmp)
-        Move-Item $tmp $dest -Force
+        Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing `
+            -Headers @{ "User-Agent" = "rusty-browser-setup" }
     } catch {
-        if (Test-Path $tmp) { Remove-Item $tmp -Force }
         throw "Download failed ($url): $_"
     }
 }
 
-function Find-Asset($assets, [string[]]$patterns) {
-    foreach ($p in $patterns) {
-        $hit = $assets | Where-Object { $_.name -like $p } | Select-Object -First 1
-        if ($hit) { return $hit }
-    }
-    $null
-}
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 
@@ -152,43 +138,11 @@ Write-Step "Install directory"
 if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null }
 Write-Ok $InstallDir
 
-# ── Binaries ──────────────────────────────────────────────────────────────────
-
-Write-Step "Rusty Browser binaries"
-
-$release = $null
-
-$downloads = [ordered]@{
-    "rusty.exe" = "https://github.com/$RustyRepo/releases/download/v$VersionServer/rusty.exe"
-}
-if ($installCli) {
-    $downloads["rusty-cli.exe"] = "https://github.com/$RustyRepo/releases/download/v$VersionCli/rusty-cli.exe"
-}
-
-foreach ($dest in $downloads.Keys) {
-    Write-Info "Downloading $dest..."
-    Save-Asset $downloads[$dest] "$InstallDir\$dest"
-    Write-Ok $dest
-}
-
-# ── Flux binary ───────────────────────────────────────────────────────────────
-
-Write-Step "Flux binary"
-Write-Info "Downloading flux.exe  (v$VersionFlux)..."
-Save-Asset "https://github.com/$FluxRepo/releases/download/v$VersionFlux/flux.exe" "$InstallDir\flux.exe"
-Write-Ok "flux.exe"
-
 # ── Configuration wizard ──────────────────────────────────────────────────────
 
 Write-Step "Redis"
 $redisUrl     = Ask "  URL" "redis://127.0.0.1:6379"
 $redisAddr    = $redisUrl
-
-Write-Step "Server API key"
-Write-Info "(clients -- including rusty-cli -- authenticate to rusty-server with this key)"
-$serverApiKey = Ask "  Key (Enter to auto-generate)" ""
-if (-not $serverApiKey) { $serverApiKey = New-RandomKey }
-Write-Ok "key set"
 
 Write-Step "AI provider"
 $aiProvider = Ask "  Provider (openrouter / openai)" "openrouter"
@@ -212,10 +166,6 @@ $localAgentMode = (-not $useAws -and -not $useGcp)
 
 if ($localAgentMode) {
     Write-Warn "No cloud provider selected -- agents will run as local subprocesses (dev/test only)"
-    Write-Step "Serverless-agent binary"
-    Write-Info "Downloading flux-agent.exe  (v$VersionServerlessAgent)..."
-    Save-Asset "https://github.com/$ServerlessAgentRepo/releases/download/v$VersionServerlessAgent/flux-agent.exe" "$InstallDir\flux-agent.exe"
-    Write-Ok "flux-agent.exe"
 }
 
 $awsBlock     = ""
@@ -318,6 +268,17 @@ $gcpCredsLine
 "@
 }
 
+Write-Step "Server API key"
+if ($localAgentMode) {
+    $serverApiKey = "local"
+    Write-Ok "local"
+} else {
+    Write-Info "(clients -- including rusty-cli -- authenticate to rusty-server with this key)"
+    $serverApiKey = Ask "  Key (Enter to auto-generate)" ""
+    if (-not $serverApiKey) { $serverApiKey = New-RandomKey }
+    Write-Ok "key set"
+}
+
 # ── Network / gRPC reachability ───────────────────────────────────────────────
 
 $grpcPort      = 50050
@@ -358,6 +319,39 @@ $insecureStr = if ($localAgentMode) { "true" } else { "false" }
 
 $frontendDir = if ($installFrontend) { "$InstallDir\frontend" } else { "" }
 
+# ── Downloads ─────────────────────────────────────────────────────────────────
+
+Write-Step "Rusty Browser binaries"
+if ($ForceInstall -or -not (Test-Path "$InstallDir\rusty.exe")) {
+    Write-Info "Downloading rusty.exe..."
+    Save-Asset "https://github.com/$RustyRepo/releases/download/v$VersionServer/rusty.exe" "$InstallDir\rusty.exe"
+} else { Write-Info "rusty.exe already present, skipping" }
+Write-Ok "rusty.exe"
+
+if ($installCli) {
+    if ($ForceInstall -or -not (Test-Path "$InstallDir\rusty-cli.exe")) {
+        Write-Info "Downloading rusty-cli.exe..."
+        Save-Asset "https://github.com/$RustyRepo/releases/download/v$VersionCli/rusty-cli.exe" "$InstallDir\rusty-cli.exe"
+    } else { Write-Info "rusty-cli.exe already present, skipping" }
+    Write-Ok "rusty-cli.exe"
+}
+
+Write-Step "Flux binary"
+if ($ForceInstall -or -not (Test-Path "$InstallDir\flux.exe")) {
+    Write-Info "Downloading flux.exe..."
+    Save-Asset "https://github.com/$FluxRepo/releases/download/v$VersionFlux/flux.exe" "$InstallDir\flux.exe"
+} else { Write-Info "flux.exe already present, skipping" }
+Write-Ok "flux.exe"
+
+if ($localAgentMode) {
+    Write-Step "Serverless-agent binary"
+    if ($ForceInstall -or -not (Test-Path "$InstallDir\flux-agent.exe")) {
+        Write-Info "Downloading flux-agent.exe..."
+        Save-Asset "https://github.com/$ServerlessAgentRepo/releases/download/v$VersionServerlessAgent/flux-agent.exe" "$InstallDir\flux-agent.exe"
+    } else { Write-Info "flux-agent.exe already present, skipping" }
+    Write-Ok "flux-agent.exe"
+}
+
 # ── Write rusty.yaml ──────────────────────────────────────────────────────────
 
 Write-Step "Writing rusty.yaml"
@@ -373,6 +367,7 @@ flux:
   base_url: "http://127.0.0.1:7227"
   api_key: "$fluxApiKey"
   function_name: "rusty-agent"
+  pending_timeout_secs: 120
 "@
 
 @"
@@ -435,37 +430,18 @@ network:
     Write-Ok "agent.yaml"
 }
 
-# ── Frontend -- download prebuilt artifact ────────────────────────────────────
-
 if ($installFrontend) {
-    Write-Step "Frontend -- downloading prebuilt artifact"
-
-    $feAsset = if ($release) { Find-Asset $release.assets @("rusty-frontend.zip") } else { $null }
-
-    if (-not $feAsset) {
-        Write-Info "Not in the Rusty Browser release -- fetching separately..."
-        try {
-            $release2 = Get-LatestRelease $RustyRepo
-            $feAsset  = Find-Asset $release2.assets @("rusty-frontend.zip")
-        } catch { $feAsset = $null }
-    }
-
-    if ($feAsset) {
+    Write-Step "Frontend"
+    if ($ForceInstall -or -not (Test-Path $frontendDir)) {
         $feZip = Join-Path $env:TEMP "rusty-frontend.zip"
-        Write-Info "Downloading $($feAsset.name)..."
-        Save-Asset $feAsset.browser_download_url $feZip
-
+        Write-Info "Downloading rusty-frontend.zip..."
+        Save-Asset "https://github.com/$RustyRepo/releases/download/v$VersionFrontend/rusty-frontend.zip" $feZip
         if (Test-Path $frontendDir) { Remove-Item $frontendDir -Recurse -Force }
         New-Item -ItemType Directory -Path $frontendDir -Force | Out-Null
         Expand-Archive $feZip $frontendDir -Force
         Remove-Item $feZip -Force
         Write-Ok "frontend extracted to $frontendDir"
-    } else {
-        Write-Warn "rusty-frontend.zip not found in release -- frontend will not be available"
-        Write-Info "Run a release with 'rusty-frontend' included to publish the artifact"
-        $installFrontend = $false
-        $frontendDir     = ""
-    }
+    } else { Write-Info "frontend already present, skipping" }
 }
 
 # ── Generate rusty-launch.ps1 ─────────────────────────────────────────────────
@@ -475,45 +451,7 @@ Write-Step "Generating rusty-launch.ps1"
 $safeInstall  = $InstallDir  -replace "'", "''"
 $safeFrontend = $frontendDir -replace "'", "''"
 
-$localRegisterBlock = if ($localAgentMode) { @"
-
-Write-Host "  Waiting for Flux to be ready..." -ForegroundColor DarkGray
-Start-Sleep -Seconds 4
-
-Write-Host "  Registering agent with Flux..." -ForegroundColor Cyan
-try {
-    Invoke-RestMethod -Method POST -Uri "http://127.0.0.1:7227/agents/register" ``
-        -ContentType "application/json" ``
-        -Headers @{ Authorization = "Bearer $fluxApiKey" } ``
-        -Body '{"address":"localhost:50052"}' | Out-Null
-    Write-Host "  Agent registered" -ForegroundColor Green
-} catch {
-    Write-Warning "  Agent registration failed: `$_  (retry manually if needed)"
-}
-"@ } else { "" }
-
-$localAgentTab = if ($localAgentMode) { @"
-    `$wtArgs += " ; new-tab --title ``"Flux Agent``" --startingDirectory ``"`$InstallDir``" -- powershell -NoExit -NoLogo -Command ``"& '`$InstallDir\flux-agent.exe'``""
-"@ } else { "" }
-
-$frontendTab = if ($frontendDir) { @"
-    if (`$Frontend) {
-        `$wtArgs += " ; new-tab --title ``"Rusty Frontend``" --startingDirectory ``"`$InstallDir``" -- powershell -NoExit -NoLogo -Command ``"& '`$InstallDir\rusty-frontend.ps1'``""
-    }
-"@ } else { "" }
-
-$frontendFallback = if ($frontendDir) { @"
-    if (`$Frontend) {
-        Write-Host "  Starting Rusty Frontend..." -ForegroundColor Cyan
-        Open-Window "Rusty Frontend" "& '`$InstallDir\rusty-frontend.ps1'"
-    }
-"@ } else { "" }
-
-$frontendInfo = if ($frontendDir) { @"
-if (`$Frontend) { Write-Host "  Frontend: http://localhost:3000" -ForegroundColor Green }
-"@ } else { "" }
-
-@"
+$launchHeader = @"
 #Requires -Version 5.1
 <#
 .SYNOPSIS
@@ -550,26 +488,74 @@ function Open-Window([string]`$title, [string]`$cmd) {
 
 Write-Host ""
 
+"@
+
+$launchBody = if ($localAgentMode) { @"
 if (Get-Command wt -ErrorAction SilentlyContinue) {
     `$wtArgs  = "new-tab --title ``"Flux``" --startingDirectory ``"`$InstallDir``" -- powershell -NoExit -NoLogo -Command ``"& '`$InstallDir\flux.exe'``""
-$localAgentTab    `$wtArgs += " ; new-tab --title ``"Rusty Server``" --startingDirectory ``"`$InstallDir``" -- powershell -NoExit -NoLogo -Command ``"& '`$InstallDir\rusty-server.ps1'``""
-$frontendTab    Write-Host "  Opening tabs: Flux$(if ('$localAgentMode' -eq 'True') { ', Flux Agent' }), Rusty Server" -ForegroundColor Cyan
+    `$wtArgs += " ; new-tab --title ``"Flux Agent``" --startingDirectory ``"`$InstallDir``" -- powershell -NoExit -NoLogo -Command ``"& '`$InstallDir\flux-agent.exe'``""
+    `$wtArgs += " ; new-tab --title ``"Rusty Server``" --startingDirectory ``"`$InstallDir``" -- powershell -NoExit -NoLogo -Command ``"& '`$InstallDir\rusty-server.ps1'``""
+    if (`$Frontend) {
+        `$wtArgs += " ; new-tab --title ``"Rusty Frontend``" --startingDirectory ``"`$InstallDir``" -- powershell -NoExit -NoLogo -Command ``"& '`$InstallDir\rusty-frontend.ps1'``""
+    }
+    Write-Host "  Opening tabs: Flux, Flux Agent, Rusty Server`$(if (`$Frontend) { ', Rusty Frontend' })" -ForegroundColor Cyan
     Start-Process wt -ArgumentList `$wtArgs
 } else {
     Write-Host "  Starting Flux server..." -ForegroundColor Cyan
     Open-Window "Flux" "& '`$InstallDir\flux.exe'"
+    Write-Host "  Starting Flux agent..." -ForegroundColor Cyan
+    Open-Window "Flux Agent" "& '`$InstallDir\flux-agent.exe'"
     Write-Host "  Starting Rusty Server..." -ForegroundColor Cyan
     Open-Window "Rusty Server" "& '`$InstallDir\rusty-server.ps1'"
-$frontendFallback}
-$localRegisterBlock
+    if (`$Frontend) {
+        Write-Host "  Starting Rusty Frontend..." -ForegroundColor Cyan
+        Open-Window "Rusty Frontend" "& '`$InstallDir\rusty-frontend.ps1'"
+    }
+}
+
+Write-Host "  Waiting for Flux to be ready..." -ForegroundColor DarkGray
+Start-Sleep -Seconds 4
+
+Write-Host "  Registering agent with Flux..." -ForegroundColor Cyan
+try {
+    Invoke-RestMethod -Method POST -Uri "http://127.0.0.1:7227/agents/register" ``
+        -ContentType "application/json" ``
+        -Headers @{ Authorization = "Bearer $fluxApiKey" } ``
+        -Body '{"address":"localhost:50052"}' | Out-Null
+    Write-Host "  Agent registered" -ForegroundColor Green
+} catch {
+    Write-Warning "  Agent registration failed: `$_  (retry manually if needed)"
+}
+"@ } else { @"
+if (Get-Command wt -ErrorAction SilentlyContinue) {
+    `$wtArgs  = "new-tab --title ``"Rusty Server``" --startingDirectory ``"`$InstallDir``" -- powershell -NoExit -NoLogo -Command ``"& '`$InstallDir\rusty-server.ps1'``""
+    if (`$Frontend) {
+        `$wtArgs += " ; new-tab --title ``"Rusty Frontend``" --startingDirectory ``"`$InstallDir``" -- powershell -NoExit -NoLogo -Command ``"& '`$InstallDir\rusty-frontend.ps1'``""
+    }
+    Write-Host "  Opening tabs: Rusty Server`$(if (`$Frontend) { ', Rusty Frontend' })" -ForegroundColor Cyan
+    Start-Process wt -ArgumentList `$wtArgs
+} else {
+    Write-Host "  Starting Rusty Server..." -ForegroundColor Cyan
+    Open-Window "Rusty Server" "& '`$InstallDir\rusty-server.ps1'"
+    if (`$Frontend) {
+        Write-Host "  Starting Rusty Frontend..." -ForegroundColor Cyan
+        Open-Window "Rusty Frontend" "& '`$InstallDir\rusty-frontend.ps1'"
+    }
+}
+"@ }
+
+$launchFooter = @"
+
 Write-Host "  Server: http://localhost:$httpPort" -ForegroundColor Green
-$frontendInfo
+if (`$Frontend) { Write-Host "  Frontend: http://localhost:3000" -ForegroundColor Green }
 Write-Host ""
 Write-Host "  First run? After the server is ready:" -ForegroundColor Yellow
 Write-Host "    rusty-cli init" -ForegroundColor DarkGray
 Write-Host "    # or: curl -X POST http://localhost:$httpPort/initialize/" -ForegroundColor DarkGray
 Write-Host ""
-"@ | ForEach-Object { Write-File "$InstallDir\rusty-launch.ps1" $_ }
+"@
+
+Write-File "$InstallDir\rusty-launch.ps1" ($launchHeader + $launchBody + $launchFooter)
 
 Write-Ok "rusty-launch.ps1"
 
