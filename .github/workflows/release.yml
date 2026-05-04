@@ -368,13 +368,13 @@ jobs:
           VERSION=$(node -p "require('./rusty-frontend/package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Check Existing Release
+      - name: Check Existing Asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          if gh release view "v$VERSION" > /dev/null 2>&1; then
-            echo "Release v$VERSION already exists."
+          if gh release view "v$VERSION" --json assets --jq '.assets[].name' 2>/dev/null | grep -q "^rusty-frontend.zip$"; then
+            echo "rusty-frontend.zip already exists in release v$VERSION."
             if [ "${{ inputs.force_frontend }}" == "false" ]; then
               echo "Force is false. Aborting."
               exit 1
