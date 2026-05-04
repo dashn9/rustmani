@@ -20,9 +20,9 @@ export function LogStream({ executionId, source = "rusty", height = "h-72" }: Pr
   const [autoscroll, setAutoscroll] = useState(true);
   const ref = useRef<HTMLDivElement>(null);
   const { data, error, loading } = usePolling(
-    (s) => source === "flux"
+    (s) => (source === "flux"
       ? flux.getExecution(executionId, s)
-      : api.logs(executionId, s),
+      : api.logs(executionId, s)) as Promise<unknown>,
     2000,
     [executionId, source],
   );
