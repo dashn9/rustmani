@@ -7,7 +7,7 @@ on:
         description: 'Packages to release (comma-separated)'
         type: string
         required: true
-        default: 'rusty-agent,rusty-server,rusty-cli'
+        default: 'rusty-agent,rusty-server,rusty-cli,rusty-frontend'
       force_agent:
         description: 'Force release for rusty-agent'
         type: boolean
@@ -20,6 +20,11 @@ on:
         default: false
       force_cli:
         description: 'Force release for rusty-cli'
+        type: boolean
+        required: false
+        default: false
+      force_frontend:
+        description: 'Force release for rusty-frontend'
         type: boolean
         required: false
         default: false
@@ -343,6 +348,69 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.version }}
           files: target/release/rusty-cli.exe
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+
+  release_frontend:
+    name: Release rusty-frontend
+    runs-on: ubuntu-22.04
+    if: contains(inputs.packages, 'rusty-frontend')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read Version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./rusty-frontend/package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check Existing Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            echo "Release v$VERSION already exists."
+            if [ "${{ inputs.force_frontend }}" == "false" ]; then
+              echo "Force is false. Aborting."
+              exit 1
+            fi
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: rusty-frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: rusty-frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: rusty-frontend
+        run: npm run build
+
+      - name: Package standalone output
+        working-directory: rusty-frontend
+        run: |
+          mkdir -p ../frontend-dist
+          cp -r .next/standalone/. ../frontend-dist/
+          mkdir -p ../frontend-dist/.next/static
+          cp -r .next/static/. ../frontend-dist/.next/static/
+          cp -r public/. ../frontend-dist/public/
+          cd ../frontend-dist && zip -r ../rusty-frontend.zip .
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          files: rusty-frontend.zip
           draft: false
           prerelease: false
           generate_release_notes: false

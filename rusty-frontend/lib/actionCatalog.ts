@@ -4,7 +4,8 @@ import { api } from "./api";
 
 export type ActionField =
   | { kind: "text"; name: string; placeholder?: string; mono?: boolean; required?: boolean }
-  | { kind: "number"; name: string; placeholder?: string; required?: boolean };
+  | { kind: "number"; name: string; placeholder?: string; required?: boolean }
+  | { kind: "checkbox"; name: string; label: string };
 
 export type ActionGroup = "Navigation" | "Interaction" | "Inspection" | "Lifecycle" | "AI";
 
@@ -114,8 +115,9 @@ export const ACTIONS: ActionDef[] = [
   },
   {
     id: "close-browser", label: "Close browser", group: "Lifecycle",
-    destructive: true, clearSelectionOnSuccess: true, fields: [],
-    run: (id) => api.closeBrowser(id),
+    destructive: true, clearSelectionOnSuccess: true,
+    fields: [{ kind: "checkbox", name: "force", label: "Force" }],
+    run: (id, v) => api.closeBrowser(id, v.force === "true"),
   },
 
   {

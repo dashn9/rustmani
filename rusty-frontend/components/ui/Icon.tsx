@@ -75,6 +75,7 @@ export const IconTrash = make(<>
   <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
   <path d="M10 11v6M14 11v6" />
 </>);
+export const IconZap = make(<><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></>);
 export const IconLogo = make(<>
   <rect x="3" y="3" width="18" height="18" rx="4" fill="currentColor" stroke="none" />
   <path d="M8 8h5a3 3 0 0 1 0 6H9l5 6" stroke="var(--wb-inverse)" strokeWidth={1.8} />

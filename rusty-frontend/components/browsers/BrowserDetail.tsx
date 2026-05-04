@@ -5,6 +5,7 @@ import { DisplayStream } from "@/components/browsers/DisplayStream";
 import { LogStream } from "@/components/browsers/LogStream";
 import { UIMap } from "@/components/browsers/UIMap";
 import { Button } from "@/components/ui/Button";
+import { ForceButton } from "@/components/ui/ForceButton";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { StateBadge } from "@/components/ui/Badge";
@@ -24,11 +25,12 @@ export function BrowserDetail({ browserId: id }: Props) {
     (s) => api.getBrowser(id, s), 4000, [id],
   );
   const [screenshot, setScreenshot] = useState<string | null>(null);
+  const [force, setForce] = useState(false);
 
   async function closeBrowser() {
-    if (!confirm("Close this browser?")) return;
+    if (!confirm(`Close this browser${force ? " (force)" : ""}?`)) return;
     try {
-      await api.closeBrowser(id);
+      await api.closeBrowser(id, force);
       toast.push({ tone: "success", message: "Browser closed" });
       router.push("/browsers");
     } catch (e) {
@@ -226,9 +228,9 @@ export function BrowserDetail({ browserId: id }: Props) {
 
       <Section title="Lifecycle">
         <div className="flex justify-end">
-          <Button variant="danger" size="sm" onClick={closeBrowser}>
+          <ForceButton force={force} onToggleForce={setForce} onClick={closeBrowser}>
             Close browser
-          </Button>
+          </ForceButton>
         </div>
       </Section>
     </div>

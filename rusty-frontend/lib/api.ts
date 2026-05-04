@@ -83,9 +83,10 @@ export const api = {
   spawnBrowser: (identity?: Record<string, unknown>) =>
     request<SpawnResult>("/browsers/", { method: "PUT", body: { identity: identity ?? null } }),
 
-  closeBrowser: (id: string) =>
-    request<void>(`/browsers/${id}/`, { method: "DELETE" }),
-  closeAllBrowsers: () => request<void>("/browsers/", { method: "DELETE" }),
+  closeBrowser: (id: string, force?: boolean) =>
+    request<void>(`/browsers/${id}/${force ? "?force=true" : ""}`, { method: "DELETE" }),
+  closeAllBrowsers: (force?: boolean) =>
+    request<void>(`/browsers/${force ? "?force=true" : ""}`, { method: "DELETE" }),
 
   createContext: (id: string) =>
     request<{ execution_id: string; context_id: string }>(
@@ -137,7 +138,8 @@ export const api = {
   logs: (id: string, signal?: AbortSignal) =>
     request<{ logs: string }>(`/browsers/${id}/logs/`, { signal }),
 
-  teardown: () => request<unknown>("/teardown/", { method: "DELETE" }),
+  teardown: (force?: boolean) =>
+    request<unknown>(`/teardown/${force ? "?force=true" : ""}`, { method: "DELETE" }),
 
   initialize: () =>
     request<{ status: string; function?: string; version?: string }>("/initialize/", {

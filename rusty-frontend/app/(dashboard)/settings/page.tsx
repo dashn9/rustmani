@@ -2,6 +2,7 @@
 
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
+import { ForceButton } from "@/components/ui/ForceButton";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input, Label, SecretInput } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
@@ -20,6 +21,7 @@ export default function SettingsPage() {
   const [fluxKey, setFluxKey] = useState(initial?.fluxKey ?? "");
   const [saving, setSaving] = useState(false);
   const [tearing, setTearing] = useState(false);
+  const [forceTeardown, setForceTeardown] = useState(false);
   const [initializing, setInitializing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,7 +64,7 @@ export default function SettingsPage() {
     if (!confirm("Close all browsers and terminate Flux nodes? This cannot be undone.")) return;
     setTearing(true);
     try {
-      await api.teardown();
+      await api.teardown(forceTeardown);
       toast.push({ tone: "success", message: "Teardown complete" });
     } catch (e) {
       toast.push({ tone: "error", message: describeError(e) });
@@ -128,7 +130,11 @@ export default function SettingsPage() {
             <Row
               title="Teardown all"
               description="Close every browser and terminate all Flux nodes."
-              action={<Button variant="danger" size="sm" onClick={teardown} loading={tearing}>Teardown</Button>}
+              action={
+                <ForceButton force={forceTeardown} onToggleForce={setForceTeardown} onClick={teardown} loading={tearing}>
+                  Teardown
+                </ForceButton>
+              }
             />
           </CardBody>
         </Card>

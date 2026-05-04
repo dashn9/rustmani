@@ -56,7 +56,7 @@ export function DisplayStream({ browserId: id, viewOnly = false, className }: Pr
 
   return (
     <div className={`relative rounded-md border border-border bg-black overflow-hidden ${className ?? ""}`}>
-      <div ref={targetRef} className="w-full h-full" />
+      <div ref={targetRef} className="relative w-full aspect-video" />
       {!connected && !error && (
         <div className="absolute inset-x-0 bottom-0 px-3 py-1 text-[10px] text-muted-foreground bg-black/60">
           Connecting…

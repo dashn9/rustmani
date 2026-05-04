@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { IconBrowsers, IconPlus, IconRefresh, IconTrash } from "@/components/ui/Icon";
+import { ForceButton } from "@/components/ui/ForceButton";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Stat } from "@/components/ui/Stat";
 import { useToast } from "@/components/ui/Toast";
@@ -24,6 +25,7 @@ export default function BrowsersPage() {
   const [displayed, setDisplayed] = useState<Set<string>>(new Set());
   const [spawning, setSpawning] = useState(false);
   const [closingAll, setClosingAll] = useState(false);
+  const [forceClose, setForceClose] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   const [selBox, setSelBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
@@ -102,10 +104,10 @@ export default function BrowsersPage() {
   const displayableCount = Array.from(selected).filter((id) => !displayed.has(id)).length;
 
   async function closeAll() {
-    if (!confirm(`Close all ${counts.total} browser(s)?`)) return;
+    if (!confirm(`Close all ${counts.total} browser(s)${forceClose ? " (force)" : ""}?`)) return;
     setClosingAll(true);
     try {
-      await api.closeAllBrowsers();
+      await api.closeAllBrowsers(forceClose);
       toast.push({ tone: "success", message: "All browsers closed." });
       setSelected(new Set());
       setDisplayed(new Set());
@@ -142,9 +144,9 @@ export default function BrowsersPage() {
               <IconRefresh size={14} className={loading ? "animate-spin" : ""} /> Refresh
             </Button>
             {counts.total > 0 && (
-              <Button variant="danger" size="sm" onClick={closeAll} loading={closingAll}>
+              <ForceButton force={forceClose} onToggleForce={setForceClose} onClick={closeAll} loading={closingAll}>
                 <IconTrash size={14} /> Close all
-              </Button>
+              </ForceButton>
             )}
             <Button size="sm" onClick={spawn} loading={spawning}>
               <IconPlus size={14} /> Spawn
@@ -198,9 +200,7 @@ export default function BrowsersPage() {
             className="grid gap-4 items-start grid-cols-[repeat(auto-fill,minmax(360px,1fr))] select-none"
             onMouseDown={onGridMouseDown}
           >
-            {[...list]
-              .sort((a, b) => Number(displayed.has(b.execution_id)) - Number(displayed.has(a.execution_id)))
-              .map((b) => (
+            {list.map((b) => (
               <div key={b.execution_id} data-browser-id={b.execution_id}>
                 <BrowserCard
                   browser={b}

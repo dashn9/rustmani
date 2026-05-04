@@ -10,6 +10,7 @@ type Props = {
 
 type GraphNode = {
   id: string;
+  nodeId?: number | string;
   label: string;
   sub?: string;
   meta?: unknown;
@@ -73,6 +74,9 @@ function NodeBox({
         <span className="font-mono text-[10px] uppercase tracking-wider text-accent">
           {node.label}
         </span>
+        {node.nodeId !== undefined && node.nodeId !== null && (
+          <span className="font-mono text-[9px] text-muted-foreground">#{node.nodeId}</span>
+        )}
         {expandable && (
           <span className="ml-auto font-mono text-[9px] text-muted-foreground">
             {open ? "−" : `+${countDescendants(node)}`}
@@ -137,6 +141,7 @@ function toGraph(value: unknown): GraphNode[] {
 function buildFromFlat(items: FlatItem[]): GraphNode[] {
   const graphs: GraphNode[] = items.map((item, i) => ({
     id: `n${i}`,
+    nodeId: item.id,
     label: String(item.role ?? "node"),
     sub: subtitleFor(item),
     meta: item,
@@ -173,6 +178,7 @@ function normalizeRecursive(value: unknown, path: string): GraphNode[] {
   const childrenRaw = childrenKey ? (obj[childrenKey] as unknown[]) : [];
   return [{
     id: path,
+    nodeId: obj.id,
     label: String(obj.role ?? "node"),
     sub: subtitleFor(obj),
     meta: obj,

@@ -2,6 +2,7 @@
 
 import { BatchResults, RunRecord } from "@/components/browsers/BatchResults";
 import { Button } from "@/components/ui/Button";
+import { ForceButton } from "@/components/ui/ForceButton";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { ACTIONS, ActionDef, actionsByGroup, getAction } from "@/lib/actionCatalog";
@@ -97,11 +98,6 @@ export function BatchActionBar({ selectedIds, onClear, onChanged, onShowDisplay,
     <div className="sticky top-0 z-10 -mx-1 mb-4 rounded-md border border-border bg-card/95 backdrop-blur shadow-sm">
       <div className="flex items-center gap-3 border-b border-border px-3 py-2 text-xs">
         <span className="font-medium">{selectedIds.length} selected</span>
-        {onShowDisplay && (
-          <Button size="sm" variant="secondary" onClick={onShowDisplay}>
-            Show display ({displayableCount})
-          </Button>
-        )}
         <Button size="sm" variant="ghost" onClick={onClear} className="ml-auto">Clear selection</Button>
       </div>
 
@@ -123,33 +119,51 @@ export function BatchActionBar({ selectedIds, onClear, onChanged, onShowDisplay,
           )}
         </select>
 
-        {action.fields.length === 0 ? (
+        {action.fields.filter((f) => f.kind !== "checkbox").length === 0 && (
           <span className="text-[11px] text-muted-foreground">No parameters.</span>
-        ) : (
-          action.fields.map((f) => (
-            <Input
-              key={f.name}
-              type={f.kind === "number" ? "number" : "text"}
-              placeholder={f.placeholder}
-              mono={"mono" in f ? f.mono : false}
-              required={f.required}
-              value={values[f.name] ?? ""}
-              onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
-              className="flex-1 min-w-32"
-              disabled={busy}
-            />
-          ))
         )}
+        {action.fields.filter((f) => f.kind !== "checkbox").map((f) => (
+          <Input
+            key={f.name}
+            type={f.kind === "number" ? "number" : "text"}
+            placeholder={f.placeholder}
+            mono={"mono" in f ? f.mono : false}
+            required={f.required}
+            value={values[f.name] ?? ""}
+            onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
+            className="flex-1 min-w-32"
+            disabled={busy}
+          />
+        ))}
 
-        <Button
-          size="sm"
-          variant={action.destructive ? "danger" : "primary"}
-          onClick={run}
-          loading={busy}
-        >
-          Run on {selectedIds.length}
-        </Button>
+        {action.destructive && action.fields.some((f) => f.kind === "checkbox" && f.name === "force") ? (
+          <ForceButton
+            force={values.force === "true"}
+            onToggleForce={(v) => setValues((prev) => ({ ...prev, force: v ? "true" : "" }))}
+            onClick={run}
+            loading={busy}
+          >
+            Run on {selectedIds.length}
+          </ForceButton>
+        ) : (
+          <Button
+            size="sm"
+            variant={action.destructive ? "danger" : "primary"}
+            onClick={run}
+            loading={busy}
+          >
+            Run on {selectedIds.length}
+          </Button>
+        )}
       </div>
+
+      {onShowDisplay && (
+        <div className="flex items-center border-t border-border px-3 py-2">
+          <Button size="sm" variant="secondary" onClick={onShowDisplay}>
+            Show display ({displayableCount})
+          </Button>
+        </div>
+      )}
 
       {runs && (
         <BatchResults

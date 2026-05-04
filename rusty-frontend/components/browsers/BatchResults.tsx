@@ -29,6 +29,7 @@ type Props = {
 };
 
 export function BatchResults({ runs, busy, actionLabel, onRetryFailed, onClear }: Props) {
+  const [open, setOpen] = useState(false);
   const ok = runs.filter((r) => r.status === "ok").length;
   const fail = runs.filter((r) => r.status === "fail").length;
   const pending = runs.filter((r) => r.status === "pending").length;
@@ -39,7 +40,14 @@ export function BatchResults({ runs, busy, actionLabel, onRetryFailed, onClear }
   return (
     <div className="border-t border-border">
       <div className="flex items-center gap-3 px-3 py-2 text-xs">
-        <span className="font-medium">{actionLabel}</span>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-2 font-medium hover:text-muted-foreground transition-colors"
+        >
+          <span>{open ? "▾" : "▸"}</span>
+          <span>{actionLabel}</span>
+        </button>
         <span className="font-mono text-muted-foreground">
           {ok} ok
           {fail > 0 && <> · <span className="text-[var(--error)]">{fail} failed</span></>}
@@ -55,9 +63,11 @@ export function BatchResults({ runs, busy, actionLabel, onRetryFailed, onClear }
           <Button size="sm" variant="ghost" onClick={onClear}>Dismiss</Button>
         </div>
       </div>
-      <ul className="max-h-96 overflow-auto wb-scroll divide-y divide-border">
-        {runs.map((r) => <ResultRow key={r.id} run={r} />)}
-      </ul>
+      {open && (
+        <ul className="max-h-96 overflow-auto wb-scroll divide-y divide-border">
+          {runs.map((r) => <ResultRow key={r.id} run={r} />)}
+        </ul>
+      )}
     </div>
   );
 }

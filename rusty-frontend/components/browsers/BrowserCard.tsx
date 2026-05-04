@@ -49,8 +49,8 @@ export function BrowserCard({
       </div>
 
       {showDisplay && (
-        <div className="border-b border-border bg-black aspect-video">
-          <DisplayStream browserId={b.execution_id} className="!rounded-none !border-0 h-full" />
+        <div className="border-b border-border">
+          <DisplayStream browserId={b.execution_id} className="!rounded-none !border-0" />
         </div>
       )}
 
