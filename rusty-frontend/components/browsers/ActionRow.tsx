@@ -50,9 +50,9 @@ export function ActionRow({ label, fields, buttonLabel = "Run", onRun }: Props) 
           <Input
             key={f.name}
             type={f.kind === "number" ? "number" : "text"}
-            placeholder={f.placeholder}
+            placeholder={'placeholder' in f ? f.placeholder : undefined}
             mono={"mono" in f ? f.mono : false}
-            required={f.required}
+            required={'required' in f ? f.required : undefined}
             value={values[f.name] ?? ""}
             onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
             className="flex-1 min-w-32"

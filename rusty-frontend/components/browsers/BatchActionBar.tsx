@@ -48,7 +48,7 @@ export function BatchActionBar({ selectedIds, onClear, onChanged, onShowDisplay,
 
   function missingRequired(): string | null {
     for (const f of action.fields) {
-      if (f.required && !(values[f.name] ?? "").trim()) return f.name;
+      if ('required' in f && f.required && !(values[f.name] ?? "").trim()) return f.name;
     }
     return null;
   }
