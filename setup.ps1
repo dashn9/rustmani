@@ -13,24 +13,29 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$InstallDir   = "C:\Program Files\RustyBrowser"
-$RustyRepo    = "dashn9/rusty-browser"
-$FluxRepo     = "dashn9/serverless-flux"
+$InstallDir   = "$env:LOCALAPPDATA\RustyBrowser"
+$RustyRepo             = "dashn9/rusty-browser"
+$FluxRepo              = "dashn9/serverless-flux"
+$ServerlessAgentRepo   = "dashn9/serverless-agent"
 $NodeMinMajor = 18
 $GhHeaders    = @{ "User-Agent" = "rusty-browser-setup"; "Accept" = "application/vnd.github+json" }
 
-# ── Elevation ─────────────────────────────────────────────────────────────────
+# ── Component versions ────────────────────────────────────────────────────────
 
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
-    [Security.Principal.WindowsBuiltInRole]::Administrator
-)
-if (-not $isAdmin) {
-    Write-Host "Requesting administrator privileges..." -ForegroundColor Yellow
-    Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-    exit
-}
+$VersionServer          = "0.1.0"
+$VersionAgent           = "0.1.0"
+$VersionCli             = "0.1.0"
+$VersionFrontend        = "0.1.0"
+$VersionFlux            = "0.1.0"
+$VersionServerlessAgent = "0.1.0"
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+$Utf8NoBom = New-Object System.Text.UTF8Encoding $false
+function Write-File([string]$path, [string]$content) {
+    [System.IO.File]::WriteAllText($path, $content, $Utf8NoBom)
+}
 
 function Write-Step([string]$msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Write-Ok([string]$msg)   { Write-Host "    ok  $msg" -ForegroundColor Green }
@@ -49,6 +54,22 @@ function Ask-YN([string]$prompt, [bool]$defaultYes = $true) {
     $raw  = (Read-Host "$prompt $hint").Trim().ToLower()
     if ($raw -eq "") { return $defaultYes }
     return $raw -eq "y"
+}
+
+function Select-Multi([string[]]$options) {
+    for ($i = 0; $i -lt $options.Count; $i++) {
+        Write-Host "    $($i + 1). $($options[$i])" -ForegroundColor White
+    }
+    $raw = (Read-Host "  Select (e.g. 1,2 or leave blank for none)").Trim()
+    $selected = New-Object bool[] $options.Count
+    foreach ($part in ($raw -split ',')) {
+        $n = $part.Trim()
+        if ($n -match '^\d+$') {
+            $idx = [int]$n - 1
+            if ($idx -ge 0 -and $idx -lt $options.Count) { $selected[$idx] = $true }
+        }
+    }
+    return $selected
 }
 
 function Ask-Secret([string]$prompt) {
@@ -93,7 +114,7 @@ function Find-Asset($assets, [string[]]$patterns) {
 
 Clear-Host
 Write-Host ""
-Write-Host "  Rusty Browser  —  Setup" -ForegroundColor White
+Write-Host "  Rusty Browser  --  Setup" -ForegroundColor White
 Write-Host "  Install directory: $InstallDir" -ForegroundColor DarkGray
 Write-Host "  Press Enter to accept any default shown in [brackets]" -ForegroundColor DarkGray
 Write-Host ""
@@ -101,8 +122,8 @@ Write-Host ""
 # ── Component selection ───────────────────────────────────────────────────────
 
 Write-Step "Components"
-$installCli      = Ask-YN "  Install rusty-cli?" $true
-$installFrontend = Ask-YN "  Install rusty-frontend (Next.js dashboard)?" $true
+$installCli      = $true
+$installFrontend = $true
 
 # ── Prerequisite checks ───────────────────────────────────────────────────────
 
@@ -111,13 +132,13 @@ Write-Step "Checking prerequisites"
 if ($installFrontend) {
     $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
     if (-not $nodeCmd) {
-        Write-Warn "Node.js not found — v$NodeMinMajor+ required to serve the frontend (https://nodejs.org)"
+        Write-Warn "Node.js not found -- v$NodeMinMajor+ required to serve the frontend (https://nodejs.org)"
         $installFrontend = $false
     } else {
         $nodeVer   = (node --version) -replace '^v', ''
         $nodeMajor = [int]($nodeVer -split '\.')[0]
         if ($nodeMajor -lt $NodeMinMajor) {
-            Write-Warn "Node.js v$nodeVer found — v$NodeMinMajor+ required to serve the frontend. Upgrade at https://nodejs.org"
+            Write-Warn "Node.js v$nodeVer found -- v$NodeMinMajor+ required to serve the frontend. Upgrade at https://nodejs.org"
             $installFrontend = $false
         } else {
             Write-Ok "Node.js v$nodeVer"
@@ -135,90 +156,36 @@ Write-Ok $InstallDir
 
 Write-Step "Rusty Browser binaries"
 
-$inSourceRoot    = Test-Path (Join-Path $PSScriptRoot "Cargo.toml")
-$cargoAvailable  = $null -ne (Get-Command cargo -ErrorAction SilentlyContinue)
-$buildFromSource = $false
-$releaseVersion  = "unknown"
+$release = $null
 
-if ($inSourceRoot -and $cargoAvailable) {
-    $buildFromSource = Ask-YN "  Source + Cargo detected — build from source? (n = download release)" $false
+$downloads = [ordered]@{
+    "rusty.exe" = "https://github.com/$RustyRepo/releases/download/v$VersionServer/rusty.exe"
+}
+if ($installCli) {
+    $downloads["rusty-cli.exe"] = "https://github.com/$RustyRepo/releases/download/v$VersionCli/rusty-cli.exe"
 }
 
-if ($buildFromSource) {
-    Write-Info "Building — this may take several minutes..."
-    Push-Location $PSScriptRoot
-    try {
-        cargo build --release
-        if (-not $?) { throw "cargo build failed" }
-    } finally { Pop-Location }
-
-    $copies = [System.Collections.Generic.List[string]]@("rusty.exe", "rusty-agent.exe")
-    if ($installCli) { $copies.Add("rusty-cli.exe") }
-
-    foreach ($name in $copies) {
-        $src = Join-Path $PSScriptRoot "target\release\$name"
-        if (Test-Path $src) { Copy-Item $src "$InstallDir\$name" -Force; Write-Ok $name }
-        else                { Write-Warn "$name not found in target\release\" }
-    }
-} else {
-    Write-Info "Fetching latest release from $RustyRepo..."
-    try {
-        $release        = Get-LatestRelease $RustyRepo
-        $releaseVersion = $release.tag_name -replace '^v', ''
-
-        $binaries = [ordered]@{
-            "rusty.exe"       = @("rusty.exe",       "rusty-server.exe")
-            "rusty-agent.exe" = @("rusty-agent.exe")
-        }
-        if ($installCli) { $binaries["rusty-cli.exe"] = @("rusty-cli.exe") }
-
-        foreach ($dest in $binaries.Keys) {
-            $asset = Find-Asset $release.assets $binaries[$dest]
-            if ($asset) {
-                Write-Info "Downloading $($asset.name)..."
-                Save-Asset $asset.browser_download_url "$InstallDir\$dest"
-                Write-Ok "$dest  (v$releaseVersion)"
-            } else {
-                Write-Warn "Could not find $dest — download manually from https://github.com/$RustyRepo/releases"
-            }
-        }
-    } catch {
-        Write-Warn "Release download failed: $_"
-    }
+foreach ($dest in $downloads.Keys) {
+    Write-Info "Downloading $dest..."
+    Save-Asset $downloads[$dest] "$InstallDir\$dest"
+    Write-Ok $dest
 }
 
 # ── Flux binary ───────────────────────────────────────────────────────────────
 
 Write-Step "Flux binary"
-Write-Info "Fetching latest release from $FluxRepo..."
-
-$fluxVersion = "0.1.0"
-try {
-    $fluxRelease = Get-LatestRelease $FluxRepo
-    $fluxVersion = $fluxRelease.tag_name -replace '^v', ''
-    $fluxAsset   = Find-Asset $fluxRelease.assets @("flux.exe", "*windows*.exe", "*win64*.exe", "*x86_64*windows*.exe")
-
-    if ($fluxAsset) {
-        Write-Info "Downloading $($fluxAsset.name)..."
-        Save-Asset $fluxAsset.browser_download_url "$InstallDir\flux.exe"
-        Write-Ok "flux.exe  (v$fluxVersion)"
-    } else {
-        Write-Warn "No Windows Flux binary found — place flux.exe at $InstallDir\flux.exe manually"
-        Write-Info "https://github.com/$FluxRepo/releases"
-    }
-} catch {
-    Write-Warn "Flux download failed: $_"
-    Write-Info "https://github.com/$FluxRepo/releases"
-}
+Write-Info "Downloading flux.exe  (v$VersionFlux)..."
+Save-Asset "https://github.com/$FluxRepo/releases/download/v$VersionFlux/flux.exe" "$InstallDir\flux.exe"
+Write-Ok "flux.exe"
 
 # ── Configuration wizard ──────────────────────────────────────────────────────
 
 Write-Step "Redis"
 $redisUrl     = Ask "  URL" "redis://127.0.0.1:6379"
-$redisAddr    = $redisUrl -replace '^redis://', ''   # host:port for flux.yaml
+$redisAddr    = $redisUrl
 
 Write-Step "Server API key"
-Write-Info "(clients — including rusty-cli — authenticate to rusty-server with this key)"
+Write-Info "(clients -- including rusty-cli -- authenticate to rusty-server with this key)"
 $serverApiKey = Ask "  Key (Enter to auto-generate)" ""
 if (-not $serverApiKey) { $serverApiKey = New-RandomKey }
 Write-Ok "key set"
@@ -228,57 +195,57 @@ $aiProvider = Ask "  Provider (openrouter / openai)" "openrouter"
 $aiKey      = Ask-Secret "  API key"
 $aiDefault  = if ($aiProvider -eq "openai") { "gpt-4o" } else { "anthropic/claude-sonnet-4-20250514" }
 $aiModel    = Ask "  Model" $aiDefault
-$aiQuality  = Ask "  Screenshot JPEG quality for AI (0.0–1.0)" "0.85"
+$aiQuality  = "0.2"
 
 # ── Flux cloud providers ──────────────────────────────────────────────────────
 
-Write-Step "Flux — cloud providers"
+Write-Step "Flux -- cloud providers"
 Write-Info "(Flux spawns browser agents on cloud VMs at scale)"
 Write-Info "(select at least one, or none to run agents locally on this machine)"
 Write-Host ""
 
-$useAws = Ask-YN "  AWS?" $false
-$useGcp = Ask-YN "  GCP?" $false
+$providerSel = Select-Multi @("AWS", "GCP")
+$useAws = $providerSel[0]
+$useGcp = $providerSel[1]
 
 $localAgentMode = (-not $useAws -and -not $useGcp)
 
 if ($localAgentMode) {
-    Write-Warn "No cloud provider selected — agents will run as local subprocesses (dev/test only)"
+    Write-Warn "No cloud provider selected -- agents will run as local subprocesses (dev/test only)"
+    Write-Step "Serverless-agent binary"
+    Write-Info "Downloading flux-agent.exe  (v$VersionServerlessAgent)..."
+    Save-Asset "https://github.com/$ServerlessAgentRepo/releases/download/v$VersionServerlessAgent/flux-agent.exe" "$InstallDir\flux-agent.exe"
+    Write-Ok "flux-agent.exe"
 }
 
 $awsBlock     = ""
 $gcpBlock     = ""
-$fluxApiKey   = New-RandomKey   # shared between flux.yaml and rusty.yaml flux section
+$fluxApiKey   = if ($localAgentMode) { "local" } else { New-RandomKey }
 
 if ($useAws) {
     Write-Host ""
     Write-Host "  AWS" -ForegroundColor White
-    $awsRegion   = Ask "    Region" "us-east-1"
-    $awsAmi      = Ask "    AMI ID"
-    $awsSecGroup = Ask "    Security Group ID"
-    $awsSshUser  = Ask "    SSH user" "admin"
-    $awsMin      = Ask "    Autoscaling min nodes" "1"
-    $awsMax      = Ask "    Autoscaling max nodes" "10"
+    $awsRegion    = Ask "    Region" "us-east-1"
+    $awsSecGroup  = Ask "    Security Group ID"
+    $awsMin       = Ask "    Min nodes" "1"
+    $awsMax       = Ask "    Max nodes" "10"
+    $awsKeyId     = Ask "    Access Key ID (Enter to use default credential chain)" ""
+    $awsSecretKey = if ($awsKeyId) { Ask-Secret "    Secret Access Key" } else { "" }
 
-    $awsCredsBlock = ""
-    if (Ask-YN "    Use static AWS credentials? (n = default credential chain)" $false) {
-        $awsKeyId     = Ask     "    Access Key ID"
-        $awsSecretKey = Ask-Secret "    Secret Access Key"
-        $awsCredsBlock = @"
+    $awsCredsBlock = if ($awsKeyId) { @"
     access_key_id: "$awsKeyId"
     secret_access_key: "$awsSecretKey"
-"@
-    }
+"@ } else { "    # credentials: using default chain (env vars / ~/.aws/credentials / instance profile)" }
 
     $awsBlock = @"
 
   aws:
     region: "$awsRegion"
-    ami: "$awsAmi"
+    ami: "ami-064519b8c76274859"
     security_group_id: "$awsSecGroup"
 $awsCredsBlock
-    ssh_user: "$awsSshUser"
-    agent_version: "$fluxVersion"
+    ssh_user: "admin"
+    agent_version: "$VersionAgent"
     autoscaling:
       enabled: true
       name: aws-prod
@@ -310,30 +277,22 @@ $awsCredsBlock
 if ($useGcp) {
     Write-Host ""
     Write-Host "  GCP" -ForegroundColor White
-    $gcpProject  = Ask "    Project ID"
-    $gcpZone     = Ask "    Zone" "us-east5-a"
-    $gcpImage    = Ask "    Image" "projects/debian-cloud/global/images/debian-13-trixie-v20260310"
-    $gcpSshUser  = Ask "    SSH user" "ubuntu"
-    $gcpMin      = Ask "    Autoscaling min nodes" "1"
-    $gcpMax      = Ask "    Autoscaling max nodes" "10"
-
-    $gcpCredsLine = "    # credentials: using Application Default Credentials"
-    $gcpSaLine    = ""
+    $gcpProject   = Ask "    Project ID"
+    $gcpMin       = Ask "    Min nodes" "1"
+    $gcpMax       = Ask "    Max nodes" "10"
     $gcpCredsFile = Ask "    Credentials file path (Enter to use ADC)" ""
-    if ($gcpCredsFile) { $gcpCredsLine = "    credentials_file: `"$gcpCredsFile`"" }
 
-    $gcpSaEmail = Ask "    Service account email (optional)" ""
-    if ($gcpSaEmail) { $gcpSaLine = "`n    service_account_email: `"$gcpSaEmail`"" }
+    $gcpCredsLine = if ($gcpCredsFile) { "    credentials_file: `"$gcpCredsFile`"" } else { "    # credentials: using Application Default Credentials" }
 
     $gcpBlock = @"
 
   gcp:
     project_id: "$gcpProject"
-    zone: "$gcpZone"
-    image: "$gcpImage"
-$gcpCredsLine$gcpSaLine
-    ssh_user: "$gcpSshUser"
-    agent_version: "$fluxVersion"
+    zone: "us-east5-a"
+    image: "projects/debian-cloud/global/images/debian-13-trixie-v20260310"
+$gcpCredsLine
+    ssh_user: "ubuntu"
+    agent_version: "$VersionAgent"
     autoscaling:
       enabled: true
       name: gcp-prod
@@ -361,14 +320,13 @@ $gcpCredsLine$gcpSaLine
 
 # ── Network / gRPC reachability ───────────────────────────────────────────────
 
-Write-Step "Network — gRPC reachability"
-Write-Info "(cloud agents dial back to this machine; they need a publicly reachable URL)"
-Write-Host ""
-
 $grpcPort      = 50050
 $grpcServerUrl = ""
-$useNgrok      = $false
-$ngrokDomain   = ""
+
+if (-not $localAgentMode) {
+Write-Step "Network -- gRPC reachability"
+Write-Info "(cloud agents dial back to this machine; they need a publicly reachable URL)"
+Write-Host ""
 $isPublic      = Ask-YN "  Is this machine directly reachable from the internet?" $false
 
 if ($isPublic) {
@@ -376,47 +334,25 @@ if ($isPublic) {
     $grpcServerUrl = "https://${publicHost}:${grpcPort}"
     Write-Ok "grpc_server_url set to $grpcServerUrl"
 } else {
-    Write-Info "ngrok can expose your gRPC port to the internet for agent callbacks."
-    $useNgrok = $true
-
-    if (-not (Get-Command ngrok -ErrorAction SilentlyContinue)) {
-        if (Ask-YN "  ngrok not found — install via winget?" $true) {
-            Write-Info "Installing ngrok..."
-            winget install ngrok.ngrok --silent
-            if (-not (Get-Command ngrok -ErrorAction SilentlyContinue)) {
-                Write-Warn "winget install did not add ngrok to PATH — restart this terminal and re-run setup, or install from https://ngrok.com/download"
-                $useNgrok = $false
-            }
-        } else {
-            Write-Warn "Install ngrok from https://ngrok.com/download, then re-run setup or set grpc_server_url manually in rusty.yaml"
-            $useNgrok = $false
-        }
-    }
-
-    if ($useNgrok) {
-        $ngrokToken = Ask-Secret "  ngrok auth token (https://dashboard.ngrok.com/auth)"
-        if ($ngrokToken) {
-            ngrok config add-authtoken $ngrokToken 2>&1 | Out-Null
-            Write-Ok "ngrok auth token saved"
-        }
-
-        $ngrokDomain = Ask "  Static ngrok domain, e.g. abc123.tcp.ngrok.io (Enter if none — URL will rotate each session)" ""
-        if ($ngrokDomain) {
-            $grpcServerUrl = "tcp://${ngrokDomain}:${grpcPort}"
-            Write-Ok "grpc_server_url set to $grpcServerUrl"
-        } else {
-            Write-Info "No static domain — rusty-launch.ps1 will resolve the ngrok URL at startup and patch rusty.yaml"
-        }
-    }
+    Write-Host ""
+    Write-Host "  To expose your gRPC port, run ngrok in a separate terminal:" -ForegroundColor Yellow
+    Write-Host "    1. Install ngrok: https://ngrok.com/download" -ForegroundColor DarkGray
+    Write-Host "    2. Run:  ngrok http --app-protocol=http2 https://localhost:$grpcPort" -ForegroundColor DarkGray
+    Write-Host "    3. Copy the Forwarding URL, e.g. https://abc123.ngrok-free.app" -ForegroundColor DarkGray
+    Write-Host ""
+    $grpcServerUrl = Ask "  Paste your ngrok URL"
+    Write-Ok "grpc_server_url set to $grpcServerUrl"
 }
+} # end if (-not $localAgentMode)
 
 # ── Other server settings ─────────────────────────────────────────────────────
 
 Write-Step "Server settings"
 $httpPort    = Ask "  HTTP port" "8080"
-$agentOs     = Ask "  Agent OS target (linux / windows)" "linux"
-$insecure    = if (-not $isPublic -and -not $useNgrok) { Ask-YN "  Insecure gRPC? (local dev — no TLS)" $false } else { $false }
-$insecureStr = $insecure.ToString().ToLower()
+$agentOs     = if ($localAgentMode) {
+    if ($env:OS -eq 'Windows_NT' -or $IsWindows) { "windows" } else { "linux" }
+} else { "linux" }
+$insecureStr = if ($localAgentMode) { "true" } else { "false" }
 
 # ── Frontend directory ────────────────────────────────────────────────────────
 
@@ -429,24 +365,15 @@ Write-Step "Writing rusty.yaml"
 if ($grpcServerUrl -ne "") {
     $grpcLine = "  grpc_server_url: `"$grpcServerUrl`""
 } else {
-    $grpcLine = "  # grpc_server_url: populated at launch by rusty-launch.ps1 when using ngrok"
+    $grpcLine = ""
 }
 
-if ($localAgentMode) {
-    $localBin    = ($InstallDir -replace '\\', '/') + "/rusty-agent.exe"
-    $fluxSection = @"
-flux:
-  local_binary: "$localBin"
-  function_name: "rusty-agent"
-"@
-} else {
-    $fluxSection = @"
+$fluxSection = @"
 flux:
   base_url: "http://127.0.0.1:7227"
   api_key: "$fluxApiKey"
   function_name: "rusty-agent"
 "@
-}
 
 @"
 server:
@@ -472,34 +399,51 @@ deployment:
 
 api_keys:
   - "$serverApiKey"
-"@ | Set-Content "$InstallDir\rusty.yaml" -Encoding utf8
+"@ | ForEach-Object { Write-File "$InstallDir\rusty.yaml" $_ }
 
 Write-Ok "rusty.yaml"
 
 # ── Write flux.yaml ───────────────────────────────────────────────────────────
 
-if (-not $localAgentMode) {
-    Write-Step "Writing flux.yaml"
+Write-Step "Writing flux.yaml"
 
-    @"
+$providersBlock = if ($localAgentMode) { "" } else { "`nproviders:$awsBlock$gcpBlock" }
+
+@"
 api_key: "$fluxApiKey"
 redis_addr: $redisAddr
 agent_port: $grpcPort
-providers:$awsBlock$gcpBlock
-"@ | Set-Content "$InstallDir\flux.yaml" -Encoding utf8
+disable_grpc_tls: $insecureStr$providersBlock
+"@ | ForEach-Object { Write-File "$InstallDir\flux.yaml" $_ }
 
-    Write-Ok "flux.yaml"
+Write-Ok "flux.yaml"
+
+# ── Write agent.yaml (local mode only) ───────────────────────────────────────
+
+if ($localAgentMode) {
+    Write-Step "Writing agent.yaml"
+    @"
+agent_id: agent-1
+port: 50052
+
+tls:
+  enabled: false
+
+network:
+  node_public_ip: 127.0.0.1
+"@ | ForEach-Object { Write-File "$InstallDir\agent.yaml" $_ }
+    Write-Ok "agent.yaml"
 }
 
-# ── Frontend — download prebuilt artifact ────────────────────────────────────
+# ── Frontend -- download prebuilt artifact ────────────────────────────────────
 
 if ($installFrontend) {
-    Write-Step "Frontend — downloading prebuilt artifact"
+    Write-Step "Frontend -- downloading prebuilt artifact"
 
     $feAsset = if ($release) { Find-Asset $release.assets @("rusty-frontend.zip") } else { $null }
 
     if (-not $feAsset) {
-        Write-Info "Not in the Rusty Browser release — fetching separately..."
+        Write-Info "Not in the Rusty Browser release -- fetching separately..."
         try {
             $release2 = Get-LatestRelease $RustyRepo
             $feAsset  = Find-Asset $release2.assets @("rusty-frontend.zip")
@@ -507,7 +451,7 @@ if ($installFrontend) {
     }
 
     if ($feAsset) {
-        $feZip = "$InstallDir\rusty-frontend.zip"
+        $feZip = Join-Path $env:TEMP "rusty-frontend.zip"
         Write-Info "Downloading $($feAsset.name)..."
         Save-Asset $feAsset.browser_download_url $feZip
 
@@ -517,7 +461,7 @@ if ($installFrontend) {
         Remove-Item $feZip -Force
         Write-Ok "frontend extracted to $frontendDir"
     } else {
-        Write-Warn "rusty-frontend.zip not found in release — frontend will not be available"
+        Write-Warn "rusty-frontend.zip not found in release -- frontend will not be available"
         Write-Info "Run a release with 'rusty-frontend' included to publish the artifact"
         $installFrontend = $false
         $frontendDir     = ""
@@ -531,126 +475,153 @@ Write-Step "Generating rusty-launch.ps1"
 $safeInstall  = $InstallDir  -replace "'", "''"
 $safeFrontend = $frontendDir -replace "'", "''"
 
-# Block: start ngrok and patch grpc_server_url if no static domain
-if ($useNgrok -and -not $ngrokDomain) {
-    $ngrokBlock = @"
+$localRegisterBlock = if ($localAgentMode) { @"
 
-    Write-Host "  Starting ngrok TCP tunnel on port $grpcPort..." -ForegroundColor Cyan
-    `$ngrokProc = Start-Process ngrok -ArgumentList "tcp $grpcPort" -PassThru -WindowStyle Minimized
-    Start-Sleep -Seconds 3
-    try {
-        `$tunnelUrl = ((Invoke-RestMethod "http://localhost:4040/api/tunnels").tunnels |
-                       Where-Object { `$_.proto -eq "tcp" } |
-                       Select-Object -First 1).public_url
-        if (`$tunnelUrl) {
-            `$cfg = Get-Content '$safeInstall\rusty.yaml' -Raw
-            `$cfg = `$cfg -replace '(?m)^  # grpc_server_url:.*$', "  grpc_server_url: `"`$tunnelUrl`""
-            `$cfg | Set-Content '$safeInstall\rusty.yaml' -Encoding utf8
-            Write-Host "  gRPC tunnel: `$tunnelUrl" -ForegroundColor Green
-        } else {
-            Write-Warning "Could not read ngrok tunnel URL. Set grpc_server_url manually in rusty.yaml."
-        }
-    } catch {
-        Write-Warning "ngrok API unreachable: `$_"
-    }
-"@
-} else {
-    $ngrokBlock = ""
+Write-Host "  Waiting for Flux to be ready..." -ForegroundColor DarkGray
+Start-Sleep -Seconds 4
+
+Write-Host "  Registering agent with Flux..." -ForegroundColor Cyan
+try {
+    Invoke-RestMethod -Method POST -Uri "http://127.0.0.1:7227/agents/register" ``
+        -ContentType "application/json" ``
+        -Headers @{ Authorization = "Bearer $fluxApiKey" } ``
+        -Body '{"address":"localhost:50052"}' | Out-Null
+    Write-Host "  Agent registered" -ForegroundColor Green
+} catch {
+    Write-Warning "  Agent registration failed: `$_  (retry manually if needed)"
 }
+"@ } else { "" }
 
-# Block: start Flux server window (only when using cloud providers)
-if (-not $localAgentMode) {
-    $fluxBlock = @"
+$localAgentTab = if ($localAgentMode) { @"
+    `$wtArgs += " ; new-tab --title ``"Flux Agent``" --startingDirectory ``"`$InstallDir``" -- powershell -NoExit -NoLogo -Command ``"& '`$InstallDir\flux-agent.exe'``""
+"@ } else { "" }
 
-    Write-Host "  Starting Flux server..." -ForegroundColor Cyan
-    Open-Window "Flux" "`$host.UI.RawUI.WindowTitle='Flux'; & '$safeInstall\flux.exe' --config '$safeInstall\flux.yaml'"
-    Start-Sleep -Seconds 2
-"@
-} else {
-    $fluxBlock = ""
-}
-
-# Block: start frontend window
-if ($frontendDir) {
-    $frontendBlock = @"
-
+$frontendTab = if ($frontendDir) { @"
     if (`$Frontend) {
-        if (Test-Path '$safeFrontend') {
-            Write-Host "  Starting Rusty Frontend..." -ForegroundColor Cyan
-            Open-Window "Rusty Frontend" "`$host.UI.RawUI.WindowTitle='Rusty Frontend'; `$env:PORT='3000'; node '$safeFrontend\server.js'"
-            Write-Host "  Frontend: http://localhost:3000" -ForegroundColor Green
-        } else {
-            Write-Warning "Frontend directory not found: $safeFrontend"
-        }
+        `$wtArgs += " ; new-tab --title ``"Rusty Frontend``" --startingDirectory ``"`$InstallDir``" -- powershell -NoExit -NoLogo -Command ``"& '`$InstallDir\rusty-frontend.ps1'``""
     }
-"@
-    $frontendParam  = "`n`n.PARAMETER Frontend`n    Also launch the Next.js dashboard in a separate window."
-    $frontendSwitch = "param([switch]`$Frontend)"
-    $frontendUsage  = "`n    .`\rusty-launch.ps1 -Frontend"
-} else {
-    $frontendBlock  = ""
-    $frontendParam  = ""
-    $frontendSwitch = ""
-    $frontendUsage  = ""
-}
+"@ } else { "" }
+
+$frontendFallback = if ($frontendDir) { @"
+    if (`$Frontend) {
+        Write-Host "  Starting Rusty Frontend..." -ForegroundColor Cyan
+        Open-Window "Rusty Frontend" "& '`$InstallDir\rusty-frontend.ps1'"
+    }
+"@ } else { "" }
+
+$frontendInfo = if ($frontendDir) { @"
+if (`$Frontend) { Write-Host "  Frontend: http://localhost:3000" -ForegroundColor Green }
+"@ } else { "" }
 
 @"
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Launch the Rusty Browser stack.$frontendParam
+    Launch the Rusty Browser stack.
+
+.PARAMETER Frontend
+    Also start the frontend server.
 
 .EXAMPLE
-    .\rusty-launch.ps1$frontendUsage
+    .\rusty-launch.ps1
+    .\rusty-launch.ps1 -Frontend
 #>
-$frontendSwitch
+param(
+    [switch]`$Frontend
+)
 
 `$ErrorActionPreference = "Stop"
 `$InstallDir = '$safeInstall'
 `$ServerBin  = Join-Path `$InstallDir 'rusty.exe'
-`$Config     = Join-Path `$InstallDir 'rusty.yaml'
 
 if (-not (Test-Path `$ServerBin)) {
-    Write-Error "rusty.exe not found at `$ServerBin — run setup.ps1 first"
+    Write-Error "rusty.exe not found at `$ServerBin -- run setup.ps1 first"
     exit 1
 }
 
 function Open-Window([string]`$title, [string]`$cmd) {
-    if (Get-Command wt -ErrorAction SilentlyContinue) {
-        Start-Process wt -ArgumentList "new-tab --title `"`$title`" powershell -NoExit -NoLogo -Command `"`$cmd`""
-    } else {
-        `$p = New-Object System.Diagnostics.ProcessStartInfo
-        `$p.FileName        = "powershell.exe"
-        `$p.Arguments       = "-NoExit -NoLogo -Command `"`$cmd`""
-        `$p.UseShellExecute = `$true
-        [System.Diagnostics.Process]::Start(`$p) | Out-Null
-    }
+    `$p = New-Object System.Diagnostics.ProcessStartInfo
+    `$p.FileName         = "powershell.exe"
+    `$p.Arguments        = "-NoExit -NoLogo -Command ``"`$cmd``""
+    `$p.WorkingDirectory = `$InstallDir
+    `$p.UseShellExecute  = `$true
+    [System.Diagnostics.Process]::Start(`$p) | Out-Null
 }
 
 Write-Host ""
-$ngrokBlock$fluxBlock
-Write-Host "  Starting Rusty Server..." -ForegroundColor Cyan
-Open-Window "Rusty Server" "`$host.UI.RawUI.WindowTitle='Rusty Server'; `$env:RUSTY_CONFIG='`$Config'; & '`$ServerBin'"
+
+if (Get-Command wt -ErrorAction SilentlyContinue) {
+    `$wtArgs  = "new-tab --title ``"Flux``" --startingDirectory ``"`$InstallDir``" -- powershell -NoExit -NoLogo -Command ``"& '`$InstallDir\flux.exe'``""
+$localAgentTab    `$wtArgs += " ; new-tab --title ``"Rusty Server``" --startingDirectory ``"`$InstallDir``" -- powershell -NoExit -NoLogo -Command ``"& '`$InstallDir\rusty-server.ps1'``""
+$frontendTab    Write-Host "  Opening tabs: Flux$(if ('$localAgentMode' -eq 'True') { ', Flux Agent' }), Rusty Server" -ForegroundColor Cyan
+    Start-Process wt -ArgumentList `$wtArgs
+} else {
+    Write-Host "  Starting Flux server..." -ForegroundColor Cyan
+    Open-Window "Flux" "& '`$InstallDir\flux.exe'"
+    Write-Host "  Starting Rusty Server..." -ForegroundColor Cyan
+    Open-Window "Rusty Server" "& '`$InstallDir\rusty-server.ps1'"
+$frontendFallback}
+$localRegisterBlock
 Write-Host "  Server: http://localhost:$httpPort" -ForegroundColor Green
-$frontendBlock
+$frontendInfo
 Write-Host ""
 Write-Host "  First run? After the server is ready:" -ForegroundColor Yellow
-Write-Host "    rusty-cli.exe init" -ForegroundColor DarkGray
+Write-Host "    rusty-cli init" -ForegroundColor DarkGray
 Write-Host "    # or: curl -X POST http://localhost:$httpPort/initialize/" -ForegroundColor DarkGray
 Write-Host ""
-"@ | Set-Content "$InstallDir\rusty-launch.ps1" -Encoding utf8
+"@ | ForEach-Object { Write-File "$InstallDir\rusty-launch.ps1" $_ }
 
 Write-Ok "rusty-launch.ps1"
 
+@"
+@echo off
+powershell.exe -NoLogo -NoExit -File "%~dp0rusty-launch.ps1" %*
+"@ | Set-Content "$InstallDir\rusty-launch.cmd" -Encoding ascii
+
+Write-Ok "rusty-launch.cmd"
+
+# ── Generate rusty-server.ps1 wrapper ────────────────────────────────────────
+
+@"
+`$env:RUSTY_CONFIG = '$safeInstall\rusty.yaml'
+& '$safeInstall\rusty.exe'
+"@ | ForEach-Object { Write-File "$InstallDir\rusty-server.ps1" $_ }
+
+Write-Ok "rusty-server.ps1"
+
+# ── Generate rusty-frontend command ──────────────────────────────────────────
+
+if ($frontendDir) {
+    @"
+#Requires -Version 5.1
+`$ErrorActionPreference = "Stop"
+`$ServerJs = '$safeFrontend\server.js'
+if (-not (Test-Path `$ServerJs)) {
+    Write-Error "Frontend not found at `$ServerJs -- run setup again with frontend enabled"
+    exit 1
+}
+`$env:PORT = '3000'
+Write-Host "  Rusty Frontend: http://localhost:3000" -ForegroundColor Green
+node `$ServerJs
+"@ | ForEach-Object { Write-File "$InstallDir\rusty-frontend.ps1" $_ }
+
+    @"
+@echo off
+powershell.exe -NoLogo -NoExit -File "%~dp0rusty-frontend.ps1" %*
+"@ | Set-Content "$InstallDir\rusty-frontend.cmd" -Encoding ascii
+
+    Write-Ok "rusty-frontend.cmd"
+}
+
 # ── PATH ──────────────────────────────────────────────────────────────────────
 
-$machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
-if ($machinePath -notlike "*$InstallDir*") {
+$userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+if ($userPath -notlike "*$InstallDir*") {
     Write-Host ""
-    if (Ask-YN "Add '$InstallDir' to the system PATH?" $true) {
-        [System.Environment]::SetEnvironmentVariable("Path", "$machinePath;$InstallDir", "Machine")
+    if (Ask-YN "Add '$InstallDir' to your PATH?" $true) {
+        [System.Environment]::SetEnvironmentVariable("Path", "$userPath;$InstallDir", "User")
         $env:Path = "$env:Path;$InstallDir"
-        Write-Ok "Added to PATH — restart open terminals to pick it up"
+        Write-Ok "Added to PATH -- restart open terminals to pick it up"
     }
 }
 
@@ -661,19 +632,23 @@ Write-Host "  Setup complete!" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Files written to: $InstallDir" -ForegroundColor White
 Write-Host "    rusty.yaml         server config"
-if (-not $localAgentMode) { Write-Host "    flux.yaml          Flux server config" }
+Write-Host "    flux.yaml          Flux server config"
 Write-Host "    rusty-launch.ps1   start the stack"
 Write-Host ""
 Write-Host "  Keys (save these somewhere safe):" -ForegroundColor Yellow
 Write-Host "    Server API key : $serverApiKey"
-if (-not $localAgentMode) { Write-Host "    Flux API key   : $fluxApiKey" }
+Write-Host "    Flux API key   : $fluxApiKey"
 Write-Host ""
 Write-Host "  To start:"
-Write-Host "    & '$InstallDir\rusty-launch.ps1'"
-if ($frontendDir) {
-    Write-Host "    & '$InstallDir\rusty-launch.ps1' -Frontend"
-}
+Write-Host "    rusty-launch              # server only"
+Write-Host "    rusty-launch -Frontend    # server + frontend"
 Write-Host ""
+if ($installFrontend) {
+    Write-Host "  To start the frontend only:"
+    Write-Host "    rusty-frontend"
+    Write-Host ""
+}
 Write-Host "  Then initialize once (generates TLS certs + deploys agent to Flux):"
-Write-Host "    rusty-cli.exe init"
+Write-Host "    rusty-cli init"
+Write-Host "    # or use the frontend UI"
 Write-Host ""

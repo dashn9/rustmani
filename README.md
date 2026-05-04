@@ -178,43 +178,34 @@ See [`rusty-server/example.agent-proxies.yaml`](rusty-server/example.agent-proxi
 
 ## Setup
 
-### 1. Install Flux
+Run the interactive setup script — it downloads all binaries, walks you through configuration, and generates launch scripts:
 
-Rusty Browser uses [serverless-flux](https://github.com/dashn9/serverless-flux) to deploy browser agents on AWS and GCP at scale. Follow the setup instructions in that repo first, then come back with your Flux URL and API key.
-
-### 2. Install Rusty Browser
-
-Download the latest release binary for your platform from the [releases page](https://github.com/dashn9/rusty-browser/releases).
-
-### 3. Configure
-
-Copy the example config:
-
-```sh
-cp example.rusty.yaml rusty.yaml
+```powershell
+.\Setup.ps1
 ```
 
-Paste your Flux URL and API key:
+**Prerequisites:** Node.js v18+ (for the frontend), Redis running or accessible.
 
-```yaml
-flux:
-  base_url: "https://your-flux-url"
-  api_key: "your_flux_api_key"
-  function_name: "rusty-agent"
+> **Not publicly reachable?** You'll need [ngrok](https://ngrok.com/download) to tunnel the gRPC port. The setup script will prompt you and tell you the exact command to run.
+
+Once setup completes, start the stack:
+
+```powershell
+rusty-launch             # server only
+rusty-launch -Frontend   # server + frontend
 ```
 
-### 4. Run
+To start the frontend independently:
 
-```sh
-RUSTY_CONFIG=rusty.yaml ./rusty
+```powershell
+rusty-frontend
 ```
 
-### 5. Initialize
-
-Call this once before spawning any browsers — it generates TLS certs, bundles the agent, and deploys it to Flux:
+Then initialize once before spawning any browsers (generates TLS certs, deploys agent to Flux):
 
 ```sh
-curl -X POST http://localhost:8080/initialize/
+rusty-cli init
+# or use the Initialize button in the frontend UI
 ```
 
 Re-run after any agent code changes or when rotating certs.
