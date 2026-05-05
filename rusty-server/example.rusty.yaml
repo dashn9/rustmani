@@ -1,5 +1,5 @@
 server:
-  http_port: 8080
+  http_port: 1011
   # grpc_port: 50050          # local port the gRPC server binds to; omit to let the OS assign a free port
   # grpc_server_url: "https://abc123.ngrok.io"  # externally reachable gRPC URL advertised to agents; defaults to https://{public_ip}:{grpc_port}
   # insecure_grpc: false          # accept plain gRPC on the master server (no TLS); for local/dev use only

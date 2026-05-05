@@ -309,7 +309,7 @@ if ($isPublic) {
 # ── Other server settings ─────────────────────────────────────────────────────
 
 Write-Step "Server settings"
-$httpPort    = Ask "  HTTP port" "8080"
+$httpPort    = Ask "  HTTP port" "1011"
 $agentOs     = if ($localAgentMode) {
     if ($env:OS -eq 'Windows_NT' -or $IsWindows) { "windows" } else { "linux" }
 } else { "linux" }

@@ -53,7 +53,7 @@ fn main() -> Result<()> {
     // CLI flags > env vars > stored config
     let url = cli.url
         .or_else(|| cfg.url.clone())
-        .unwrap_or_else(|| "http://127.0.0.1:8080".to_string());
+        .unwrap_or_else(|| "http://127.0.0.1:1011".to_string());
 
     let api_key = cli.api_key
         .or_else(|| cfg.api_key.clone())

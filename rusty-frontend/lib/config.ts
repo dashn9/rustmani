@@ -3,7 +3,7 @@
 import { ApiError, api } from "./api";
 import { clearRecentExecutions } from "./recentExecutions";
 
-export const DEFAULT_SERVER_URL = "http://localhost:8080";
+export const DEFAULT_SERVER_URL = "http://localhost:1011";
 export const DEFAULT_FLUX_URL = "http://127.0.0.1:7227";
 
 const KEY_URL = "rusty.serverUrl";

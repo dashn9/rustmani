@@ -41,7 +41,7 @@ pub struct ServerConfig {
     pub insecure_grpc: bool,
 }
 
-fn default_http_port() -> u16 { 8080 }
+fn default_http_port() -> u16 { 1011 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RedisConfig {

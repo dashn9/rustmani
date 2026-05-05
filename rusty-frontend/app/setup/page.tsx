@@ -82,7 +82,7 @@ export default function SetupPage() {
                 id="url"
                 value={serverUrl}
                 onChange={(e) => setServerUrl(e.target.value)}
-                placeholder="http://localhost:8080"
+                placeholder="http://localhost:1011"
                 mono
                 required
                 autoFocus
