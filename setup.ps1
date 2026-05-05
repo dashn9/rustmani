@@ -359,7 +359,7 @@ Write-Step "Writing rusty.yaml"
 if ($grpcServerUrl -ne "") {
     $grpcLine = "  grpc_server_url: `"$grpcServerUrl`""
 } else {
-    $grpcLine = ""
+    $grpcLine = "  grpc_server_url: `"http://localhost:$grpcPort`""
 }
 
 $fluxSection = @"
@@ -373,6 +373,7 @@ flux:
 @"
 server:
   http_port: $httpPort
+  grpc_port: $grpcPort
 $grpcLine
   insecure_grpc: $insecureStr
 

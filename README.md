@@ -180,8 +180,8 @@ See [`rusty-server/example.agent-proxies.yaml`](rusty-server/example.agent-proxi
 
 Run the interactive setup script — it downloads all binaries, walks you through configuration, and generates launch scripts:
 
-```powershell
-.\Setup.ps1
+```
+curl -sSL https://raw.githubusercontent.com/dashn9/rusty-browser/main/setup.ps1 | powershell -File -
 ```
 
 **Prerequisites:** Node.js v18+ (for the frontend), Redis running or accessible.
