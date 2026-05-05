@@ -147,7 +147,7 @@ $redisAddr    = $redisUrl
 Write-Step "AI provider"
 $aiProvider = Ask "  Provider (openrouter / openai)" "openrouter"
 $aiKey      = Ask-Secret "  API key"
-$aiDefault  = if ($aiProvider -eq "openai") { "gpt-4o" } else { "anthropic/claude-sonnet-4-20250514" }
+$aiDefault  = if ($aiProvider -eq "openai") { "gpt-5-nano" } else { "openai/gpt-5-nano" }
 $aiModel    = Ask "  Model" $aiDefault
 $aiQuality  = "0.2"
 
