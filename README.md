@@ -9,7 +9,7 @@ Rusty is a serverless browser automation platform. You spawn and manage browser 
 
 ---
 
-## PC Demo
+## Demo
 
 ![Rusty Browser demo](https://github.com/user-attachments/assets/0ed6e155-8ba2-4481-a058-5fb5f5c98b33)
 
