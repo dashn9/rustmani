@@ -249,7 +249,7 @@ mod tests {
         format!(
             r#"
 server:
-  http_port: 8080
+  http_port: 1011
 redis:
   url: "redis://localhost:6379"
 ai:
@@ -272,7 +272,7 @@ api_keys:
     fn load_minimal_valid_config() {
         let f = write_temp_config(&minimal_yaml(""));
         let cfg = RustyConfig::load(f.path().to_str().unwrap()).unwrap();
-        assert_eq!(cfg.server.http_port, 8080);
+        assert_eq!(cfg.server.http_port, 1011);
         assert_eq!(cfg.redis.url, "redis://localhost:6379");
         assert_eq!(cfg.ai.provider, AIProviderKind::OpenAI);
         assert_eq!(cfg.ai.api_key, "sk-test");
@@ -299,7 +299,7 @@ api_keys: ["k1"]
 "#;
         let f = write_temp_config(yaml);
         let cfg = RustyConfig::load(f.path().to_str().unwrap()).unwrap();
-        assert_eq!(cfg.server.http_port, 8080);
+        assert_eq!(cfg.server.http_port, 1011);
     }
 
     #[test]
@@ -666,5 +666,38 @@ US:
     fn resolution_config_default_quality() {
         let r = ResolutionConfig::default();
         assert!((r.quality - 0.85).abs() < f32::EPSILON);
+    }
+
+    // ---- substitute_env_vars ----
+
+    #[test]
+    fn substitute_env_vars_no_placeholders_returns_input_unchanged() {
+        let input = "url: https://example.com\nport: 1011\n";
+        assert_eq!(substitute_env_vars(input), input);
+    }
+
+    #[test]
+    fn substitute_env_vars_unset_variable_substitutes_empty() {
+        // A name almost certainly not present in the env. If it ever clashes, the test
+        // becomes weaker (still passes if the value is empty) but won't false-fail.
+        let input = "token: ${RUSTY_TEST_DEFINITELY_UNSET_VAR_98421}";
+        let out = substitute_env_vars(input);
+        assert_eq!(out, "token: ");
+    }
+
+    #[test]
+    fn substitute_env_vars_unterminated_placeholder_does_not_loop_forever() {
+        // The loop bails out when `${` has no matching `}` — this guards against the
+        // regression where a malformed placeholder would spin indefinitely.
+        let input = "token: ${UNCLOSED";
+        let out = substitute_env_vars(input);
+        assert_eq!(out, input);
+    }
+
+    #[test]
+    fn substitute_env_vars_multiple_unset_vars_all_substituted() {
+        let input = "${RUSTY_TEST_UNSET_A_98421}|${RUSTY_TEST_UNSET_B_98421}";
+        let out = substitute_env_vars(input);
+        assert_eq!(out, "|");
     }
 }

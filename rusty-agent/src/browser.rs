@@ -51,6 +51,7 @@ pub struct ChromeBrowserLaunchConfig {
     pub host: Option<String>,
     pub port: Option<u16>,
     pub driver_flags: Vec<String>,
+    #[serde(default)]
     pub sandbox: bool,
     pub chrome_executable_path: Option<String>,
     pub user_data_dir: Option<String>,
@@ -381,7 +382,7 @@ impl ManagedBrowser {
             .map_err(|e| BrowserError::Action(e.to_string()))
     }
 
-    pub async fn scroll_to(&mut self, node_id: i64, human: bool) -> Result<(), BrowserError> {
+    pub async fn scroll_to(&mut self, node_id: i64, _human: bool) -> Result<(), BrowserError> {
         let mut node = self
             .session
             .browser_mut()
@@ -421,7 +422,7 @@ impl ManagedBrowser {
     }
 
     pub async fn close_context(&mut self, context_id: &str) -> Result<(), BrowserError> {
-        let browsing_ctx = self
+        let _browsing_ctx = self
             .contexts
             .remove(context_id)
             .ok_or_else(|| BrowserError::Context(format!("Context not found: {context_id}")))?;
@@ -761,5 +762,82 @@ mod tests {
             assert!(p.x >= 5.0 && p.x < 6.0);
             assert!(p.y >= 8.0 && p.y < 9.0);
         }
+    }
+
+    // ---- From<ChromeBrowserLaunchConfig> for ChromeConfig ----
+
+    #[test]
+    fn from_default_launch_config_preserves_chrome_defaults() {
+        let cfg = ChromeBrowserLaunchConfig::default();
+        let default_chrome = ChromeConfig::default();
+        let chrome: ChromeConfig = cfg.into();
+        assert_eq!(chrome.driver_executable_path, default_chrome.driver_executable_path);
+        assert_eq!(chrome.host, default_chrome.host);
+        assert_eq!(chrome.port, default_chrome.port);
+        assert_eq!(chrome.chrome_executable_path, default_chrome.chrome_executable_path);
+        assert_eq!(chrome.user_data_dir, default_chrome.user_data_dir);
+        assert!(!chrome.sandbox);
+        // browser_flags should remain at its default (the From impl only sets it when non-empty)
+        assert_eq!(chrome.browser_flags.is_some(), default_chrome.browser_flags.is_some());
+    }
+
+    #[test]
+    fn from_launch_config_propagates_set_fields() {
+        let cfg = ChromeBrowserLaunchConfig {
+            driver_executable_path: Some("/usr/bin/chromedriver".into()),
+            host: Some("example.com".into()),
+            port: Some(9515),
+            driver_flags: vec![],
+            sandbox: true,
+            chrome_executable_path: Some("/usr/bin/google-chrome".into()),
+            user_data_dir: Some("/tmp/profile".into()),
+            browser_flags: vec![],
+            enable_display: false,
+        };
+        let chrome: ChromeConfig = cfg.into();
+        assert_eq!(chrome.driver_executable_path, "/usr/bin/chromedriver");
+        assert_eq!(chrome.host.as_deref(), Some("example.com"));
+        assert_eq!(chrome.port, Some(9515));
+        assert!(chrome.sandbox);
+        assert_eq!(chrome.chrome_executable_path.as_deref(), Some("/usr/bin/google-chrome"));
+        assert_eq!(chrome.user_data_dir.as_deref(), Some("/tmp/profile"));
+    }
+
+    #[test]
+    fn from_launch_config_empty_browser_flags_stays_none() {
+        // Important: the From impl only assigns browser_flags when the input is non-empty,
+        // preserving ChromeConfig's default behavior (which is None).
+        let cfg = ChromeBrowserLaunchConfig {
+            browser_flags: vec![],
+            ..ChromeBrowserLaunchConfig::default()
+        };
+        let chrome: ChromeConfig = cfg.into();
+        let default_browser_flags = ChromeConfig::default().browser_flags;
+        assert_eq!(chrome.browser_flags, default_browser_flags);
+    }
+
+    #[test]
+    fn from_launch_config_browser_flags_propagate_when_set() {
+        let cfg = ChromeBrowserLaunchConfig {
+            browser_flags: vec!["--headless".into(), "--disable-gpu".into()],
+            ..ChromeBrowserLaunchConfig::default()
+        };
+        let chrome: ChromeConfig = cfg.into();
+        let flags = chrome.browser_flags.expect("browser_flags should be Some when input is non-empty");
+        assert_eq!(flags, vec!["--headless".to_string(), "--disable-gpu".to_string()]);
+    }
+
+    #[test]
+    fn from_launch_config_driver_flags_propagate_when_set() {
+        // Note: the From impl Box::leaks each flag string. In a test process this
+        // permanently leaks a few bytes — acceptable for a one-shot test run.
+        let cfg = ChromeBrowserLaunchConfig {
+            driver_flags: vec!["--verbose".into(), "--log-level=DEBUG".into()],
+            ..ChromeBrowserLaunchConfig::default()
+        };
+        let chrome: ChromeConfig = cfg.into();
+        assert_eq!(chrome.driver_flags.len(), 2);
+        assert!(chrome.driver_flags.contains(&"--verbose"));
+        assert!(chrome.driver_flags.contains(&"--log-level=DEBUG"));
     }
 }

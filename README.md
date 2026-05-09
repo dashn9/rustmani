@@ -3,15 +3,22 @@
   &nbsp;Rusty Browser
 </h1>
 
-**Distributed AI-driven browser automation at scale — built in Rust.**
+**Distributed AI-driven stealth browser automation at scale — built in Rust.**
 
-Rusty is a serverless browser automation platform. You spawn browser agents on demand via an HTTP API, send them commands (navigate, click, type, screenshot, scroll, eval JS), and drive them with natural language through an AI instruct engine. Each agent runs in isolation, registers itself back to the master over gRPC, and is torn down when you're done.
+Rusty is a serverless browser automation platform. You spawn and manage browser agents on demand via an HTTP API, CLI, or the Frontend, send them commands (navigate, click, type, screenshot, scroll, eval JS), or drive them with natural language through an AI instruct engine. Each agent runs in isolation.
 
 ---
 
 ## PC Demo
 
-[![Demo: Setup Rusty Browser on your pc in 6 minutes](https://img.youtube.com/vi/Y7O2Gfq2A-k/0.jpg)](https://youtu.be/Y7O2Gfq2A-k)
+![Rusty Browser demo](https://github.com/user-attachments/assets/0ed6e155-8ba2-4481-a058-5fb5f5c98b33)
+
+**Cluster bootstrap → 36 live-streamed Chromes → auto-scale → teardown — all driven from the CLI.**
+
+- Boots a 3-node cluster (`e2-medium`, 2 vCPU / 4 GB each) with one command
+- Spawns **36 Chrome browsers**, each streaming its display and logs to the frontend in real time
+- Auto-scales to a 4th node the moment load hits the configured ceiling — visible live on the dashboard
+- Tears the whole thing down on demand
 
 ## Postman APIs
 
@@ -19,113 +26,9 @@ All API endpoints are available in the [Rusty Browser Postman workspace](https:/
 
 ---
 
-## Why Rusty over browser-use, Stagehand, or Playwright?
 
-Most browser automation tools treat the browser as a local subprocess. That works for one browser. It doesn't work for fifty.
+**Rusty is for when you need browsers to behave like serverless functions** — spawn on demand, run independently, scale horizontally via [Flux](https://github.com/dashn9/serverless-flux), and clean up automatically. It is not a wrapper around Playwright or Puppeteer. It uses [rustenium-identity](https://github.com/dashn9/rustenium-identity) for stealth identity, and drives Chromium directly via the `Webdriver BiDi` / CDP protocol through [rustenium](https://github.com/dashn9/rustenium).
 
-| | Rusty | browser-use | Stagehand | Playwright |
-|---|---|---|---|---|
-| Language | Rust | Python | TypeScript | JS/Python/Java |
-| Architecture | Distributed (serverless agents) | Single-process | Cloud-managed | Single-process |
-| Scale | Hundreds of concurrent agents | Limited by machine | Limited by plan | Limited by machine |
-| Stealth | Built-in identity + proxy per agent | None | None | None |
-| AI | Optional, per-agent | Core dependency | Core dependency | None |
-| Infrastructure | Self-hosted with Flux | Local | Browserbase cloud | Local |
-| Security | Mutual TLS, cert pinning | None | Managed | None |
-| Overhead | Single Rust binary | Python runtime | Node.js runtime | Node.js runtime |
-
-**Rusty is for when you need browsers to behave like serverless functions** — spawn on demand, run independently, scale horizontally, and clean up automatically. It is not a wrapper around Playwright or Puppeteer. It drives Chromium directly via the [WebDriver BiDi](https://w3c.github.io/webdriver-bidi/) protocol through [rustenium](https://github.com/dashn9/rustenium).
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────┐
-│                  Your Application                │
-│                  HTTP REST API                   │
-└───────────────────────┬─────────────────────────┘
-                        │
-                        ▼
-           ┌────────────────────────┐
-           │     rusty-server    │
-           │  Redis · Flux · AI     │
-           └──────┬─────────────────┘
-      spawn via   │           gRPC/TLS commands
-         Flux     │      ┌────────────────────────┐
-                  └─────►│    rusty-agent       │
-                         │  Chromium · Identity    │
-                         │  Proxy · gRPC server    │
-                         └────────────────────────┘
-                         (one agent per browser instance)
-```
-
-**Lifecycle:**
-1. `PUT /browsers/` — server spawns an agent via Flux, returns `execution_id`
-2. Agent starts, launches Chromium, detects its public/private IP, registers back to master via gRPC
-3. Server stores connection info in Redis, agent is now addressable
-4. Send commands via REST — server forwards over gRPC to the agent
-5. `DELETE /browsers/{id}/` — server sends `CloseBrowser`, agent exits, Redis entry is cleared
-6. Stale agents that never register within the configured timeout are auto-cancelled
-
----
-
-## Workspace
-
-| Crate | Role |
-|---|---|
-| `rusty-server` | HTTP API + gRPC master + AI instruct engine |
-| `rusty-agent` | Serverless browser agent (gRPC server over TLS) |
-| `rusty-common` | Shared types, Redis store, Flux client, config, AI provider |
-| `rusty-proto` | Protobuf definitions and generated Rust bindings |
-
----
-
-## HTTP API
-
-### Initialization
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/initialize/` | Generate TLS certs, register and deploy the agent function to Flux |
-
-### Browsers
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `PUT` | `/browsers/` | Spawn a new browser agent |
-| `GET` | `/browsers/` | List all active browsers |
-| `DELETE` | `/browsers/` | Delete all browsers |
-| `DELETE` | `/teardown/` | Delete all browsers and terminate all Flux nodes |
-| `GET` | `/browsers/{id}/` | Get browser info |
-| `DELETE` | `/browsers/{id}/` | Close and deregister a browser |
-
-### Contexts
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `PUT` | `/browsers/{id}/contexts/` | Create a new browsing context |
-| `DELETE` | `/browsers/{id}/contexts/{ctx_id}/` | Close a context |
-
-### Commands
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/browsers/{id}/navigate/` | Navigate to a URL |
-| `POST` | `/browsers/{id}/click/` | Click at coordinates |
-| `POST` | `/browsers/{id}/node-click/` | Click a DOM node by node_id |
-| `POST` | `/browsers/{id}/type/` | Type text (optionally into a node_id) |
-| `POST` | `/browsers/{id}/scroll-by/` | Scroll by Y pixels |
-| `POST` | `/browsers/{id}/scroll-to/` | Scroll a node_id into view |
-| `POST` | `/browsers/{id}/screenshot/` | Capture a base64 JPEG screenshot |
-| `POST` | `/browsers/{id}/fetch-html/` | Fetch inner HTML of a node_id (or full page) |
-| `POST` | `/browsers/{id}/fetch-text/` | Fetch inner text of a node_id |
-| `POST` | `/browsers/{id}/find-node/` | Find a node by CSS selector, returns node_id |
-| `POST` | `/browsers/{id}/wait-for-node/` | Wait for a CSS selector, returns node_id |
-| `GET` | `/browsers/{id}/ui-map/` | Get accessible UI node tree |
-| `POST` | `/browsers/{id}/eval/` | Evaluate JavaScript |
-| `POST` | `/browsers/{id}/instruct/` | Run a natural language instruction |
-| `GET` | `/browsers/{id}/logs/` | Fetch execution logs from Flux |
 
 ---
 
@@ -133,13 +36,8 @@ Most browser automation tools treat the browser as a local subprocess. That work
 
 See [`rusty-server/example.rusty.yaml`](rusty-server/example.rusty.yaml) for a full annotated reference.
 
-Start the server:
 
-```sh
-RUSTY_CONFIG=rusty.yaml cargo run --release --bin rusty
-```
-
-### Local development (no Flux)
+### Local development / usage (no Flux)
 
 Set `flux.local_binary` in your config to spawn agents as local subprocesses instead of deploying via Flux. Agent stdout/stderr is forwarded through the server's tracing output, prefixed with the execution ID.
 
@@ -165,14 +63,6 @@ Before spawning any browsers, call `POST /initialize/` once. This generates TLS 
 ## Proxy Support
 
 See [`rusty-server/example.agent-proxies.yaml`](rusty-server/example.agent-proxies.yaml). Proxies are geo-matched to the browser identity and bundled into each agent at initialization.
-
----
-
-## TLS Security Model
-
-- **Master cert** — generated once at server startup, stored in Redis, bundled into every agent. Agents use it to verify the master's identity (certificate pinning).
-- **Agent cert** — generated at `/initialize/`, stored in Redis, bundled into every agent. The server fetches it from Redis to verify each agent it connects to.
-- **Tunnel mode** — set `grpc_server_url` in config (e.g. an ngrok URL). The server automatically switches agents to native TLS verification instead of the pinned master cert.
 
 ---
 
@@ -208,23 +98,11 @@ rusty-cli init
 # or use the Initialize button in the frontend UI
 ```
 
-Re-run after any agent code changes or when rotating certs.
-
 ---
 
 ## Postman
 
 All API endpoints are available in the [Rusty Browser Postman workspace](https://www.postman.com/ishogbon/workspace/rusty-browser).
-
----
-
-## Building
-
-Requires: Rust 1.80+, `protoc` on PATH.
-
-```sh
-cargo build --release
-```
 
 ---
 

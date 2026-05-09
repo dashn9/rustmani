@@ -28,12 +28,8 @@ pub enum BrowserError {
     Click(String),
     #[error("type text failed: {0}")]
     TypeText(String),
-    #[error("eval JS failed: {0}")]
-    EvalJs(String),
     #[error("context operation failed: {0}")]
     Context(String),
-    #[error("close failed: {0}")]
-    Close(String),
     #[error("action failed: {0}")]
     Action(String),
 }
@@ -113,21 +109,9 @@ mod tests {
     }
 
     #[test]
-    fn browser_error_eval_js_display() {
-        let e = BrowserError::EvalJs("syntax error".to_string());
-        assert!(e.to_string().contains("syntax error"));
-    }
-
-    #[test]
     fn browser_error_context_display() {
         let e = BrowserError::Context("tab closed".to_string());
         assert!(e.to_string().contains("tab closed"));
-    }
-
-    #[test]
-    fn browser_error_close_display() {
-        let e = BrowserError::Close("session gone".to_string());
-        assert!(e.to_string().contains("session gone"));
     }
 
     #[test]

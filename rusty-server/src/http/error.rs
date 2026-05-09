@@ -25,7 +25,6 @@ pub enum AppError {
     Grpc(GrpcError),
     Browser(BrowserError),
     Internal(String),
-    NotFound(String),
     Unauthorized,
     Conflict(String),
 }
@@ -59,9 +58,6 @@ impl IntoResponse for AppError {
                 tracing::error!("Internal error: {msg}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", msg)
             }
-            AppError::NotFound(id) => {
-                (StatusCode::NOT_FOUND, "NOT_FOUND", format!("Not found: {id}"))
-            }
             AppError::Unauthorized => {
                 (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", "Unauthorized".to_string())
             }
@@ -86,7 +82,6 @@ impl std::fmt::Display for AppError {
             AppError::Grpc(e) => write!(f, "gRPC error: {e}"),
             AppError::Browser(e) => write!(f, "browser error: {e}"),
             AppError::Internal(msg) => write!(f, "internal error: {msg}"),
-            AppError::NotFound(id) => write!(f, "not found: {id}"),
             AppError::Unauthorized => write!(f, "unauthorized"),
             AppError::Conflict(msg) => write!(f, "conflict: {msg}"),
         }
