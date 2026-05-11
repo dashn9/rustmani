@@ -1,7 +1,9 @@
+<table align="center" bgcolor="#000000"><tr><td>
 <h1 align="center">
   <img src="https://rustybrowser.com/logos/rusty-browser_inv.png" height="50" valign="middle" />
-  &nbsp;Rusty Browser
+  &nbsp;<span style="color:#ffffff">Rusty Browser</span>
 </h1>
+</td></tr></table>
 
 **Distributed AI-driven stealth browser automation at scale — built in Rust.**
 
@@ -39,14 +41,12 @@ See [`rusty-server/example.rusty.yaml`](rusty-server/example.rusty.yaml) for a f
 
 ### Local development / usage (no Flux)
 
-Set `flux.local_binary` in your config to spawn agents as local subprocesses instead of deploying via Flux. Agent stdout/stderr is forwarded through the server's tracing output, prefixed with the execution ID.
+Set `flux.local_binary` in your config to spawn agents as local subprocesses instead of deploying via Flux.
 
 ```yaml
 flux:
   local_binary: "cargo run -p rusty-agent --"  # or path to a built binary
 ```
-
-Agent logs are emitted under the `rusty_agent` target and can be filtered independently:
 
 ```sh
 RUST_LOG=rusty=info,rusty_agent=debug cargo run -p rusty-server
