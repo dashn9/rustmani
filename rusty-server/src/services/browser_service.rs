@@ -48,7 +48,8 @@ impl BrowserService {
             let execution_id = format!("test-{}", Uuid::new_v4());
             self.state.redis.store_pending_execution(&execution_id).await?;
             spawn_local_agent(binary, &execution_id, &master_url, &display_arg, &self.state.config.agent_env).await?;
-            tracing::info!("local agent spawned execution_id={execution_id} display={}", display.as_str());
+            let display_str = display.as_str();
+            tracing::info!("local agent spawned execution_id={execution_id} display={display_str}");
             return Ok(execution_id);
         }
 
@@ -59,7 +60,8 @@ impl BrowserService {
         }
         args.push(display_arg);
         args.extend(identity.into_iter().map(|v| v.to_string()));
-        tracing::info!("spawning agent master_url={master_url} display={}", display.as_str());
+        let display_str = display.as_str();
+        tracing::info!("spawning agent master_url={master_url} display={display_str}");
         let execution_id = self.state.flux.spawn_agent(&self.state.config.flux.function_name, &args).await?;
         self.state.redis.store_pending_execution(&execution_id).await?;
         tracing::info!("agent spawned execution_id={execution_id}");

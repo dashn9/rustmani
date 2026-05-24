@@ -41,7 +41,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let browser_id = Uuid::new_v4().to_string();
     let browser_config = browser::ChromeBrowserLaunchConfig::from_env().unwrap_or_default();
 
-    info!("Starting rusty-agent browser={browser_id} execution={execution_id} display={}", display.as_str());
+    let display_str = display.as_str();
+    info!("Starting rusty-agent browser={browser_id} execution={execution_id} display={display_str}");
 
     let browser = browser::ManagedBrowser::launch(browser_config, display).await?;
 
