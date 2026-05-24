@@ -42,6 +42,8 @@ pub enum AgentError {
     Grpc(#[from] GrpcError),
     #[error("Browser error: {0}")]
     Browser(#[from] BrowserError),
+    #[error("invalid argument: {0}")]
+    InvalidArgument(String),
 }
 
 #[cfg(test)]

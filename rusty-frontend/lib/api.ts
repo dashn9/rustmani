@@ -12,9 +12,12 @@ export type Browser = {
   grpc_port: number;
   state: BrowserState;
   contexts: string[];
+  display: DisplayMode;
 };
 
 export type SpawnResult = { execution_id: string };
+
+export type DisplayMode = "headless" | "xvfb" | "normal";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public body?: unknown) {
@@ -80,8 +83,11 @@ export const api = {
   getBrowser: (id: string, signal?: AbortSignal) =>
     request<Browser>(`/browsers/${id}/`, { signal }),
 
-  spawnBrowser: (identity?: Record<string, unknown>) =>
-    request<SpawnResult>("/browsers/", { method: "PUT", body: { identity: identity ?? null } }),
+  spawnBrowser: (opts?: { identity?: Record<string, unknown>; display?: DisplayMode }) =>
+    request<SpawnResult>("/browsers/", {
+      method: "PUT",
+      body: { identity: opts?.identity ?? null, display: opts?.display ?? "headless" },
+    }),
 
   closeBrowser: (id: string, force?: boolean) =>
     request<void>(`/browsers/${id}/${force ? "?force=true" : ""}`, { method: "DELETE" }),

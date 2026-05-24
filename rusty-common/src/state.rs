@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::display::DisplayMode;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum BrowserState {
@@ -35,6 +37,8 @@ pub struct BrowserInfo {
     pub grpc_port: u16,
     pub state: BrowserState,
     pub contexts: Vec<String>,
+    #[serde(default)]
+    pub display: DisplayMode,
 }
 
 #[cfg(test)]
@@ -110,6 +114,7 @@ mod tests {
             grpc_port: 9090,
             state: BrowserState::Idle,
             contexts: vec!["ctx1".to_string()],
+            display: DisplayMode::Headless,
         };
         assert_eq!(info.browser_id, "b1");
         assert_eq!(info.execution_id, "e1");
@@ -118,6 +123,7 @@ mod tests {
         assert_eq!(info.grpc_port, 9090);
         assert_eq!(info.state, BrowserState::Idle);
         assert_eq!(info.contexts, vec!["ctx1"]);
+        assert_eq!(info.display, DisplayMode::Headless);
     }
 
     #[test]
@@ -130,6 +136,7 @@ mod tests {
             grpc_port: 50051,
             state: BrowserState::Reserved,
             contexts: vec!["ctx-a".to_string(), "ctx-b".to_string()],
+            display: DisplayMode::Xvfb,
         };
         let json = serde_json::to_string(&info).unwrap();
         let restored: BrowserInfo = serde_json::from_str(&json).unwrap();
@@ -138,6 +145,7 @@ mod tests {
         assert_eq!(restored.grpc_port, info.grpc_port);
         assert_eq!(restored.state, BrowserState::Reserved);
         assert_eq!(restored.contexts.len(), 2);
+        assert_eq!(restored.display, DisplayMode::Xvfb);
     }
 
     #[test]
@@ -150,6 +158,7 @@ mod tests {
             grpc_port: 1234,
             state: BrowserState::Idle,
             contexts: vec![],
+            display: DisplayMode::Normal,
         };
         assert!(info.contexts.is_empty());
     }

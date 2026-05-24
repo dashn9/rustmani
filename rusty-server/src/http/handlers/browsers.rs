@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::{extract::Path, extract::Query, extract::State, http::StatusCode, Json};
 use futures::{SinkExt, StreamExt};
+use rusty_common::display::DisplayMode;
 use rusty_proto::DisplayChunk;
 use serde::Deserialize;
 
@@ -18,13 +19,15 @@ fn svc(state: &Arc<AppState>) -> BrowserService {
 #[derive(Deserialize)]
 pub struct CreateBrowserRequest {
     pub identity: Option<serde_json::Value>,
+    #[serde(default)]
+    pub display: DisplayMode,
 }
 
 pub async fn create_browser(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateBrowserRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let execution_id = svc(&state).create_browser(req.identity).await?;
+    let execution_id = svc(&state).create_browser(req.identity, req.display).await?;
     Ok((StatusCode::ACCEPTED, Json(serde_json::json!({ "execution_id": execution_id }))))
 }
 

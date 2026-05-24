@@ -1,8 +1,10 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use tonic::{Request, Response, Status};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
+use rusty_common::display::DisplayMode;
 use rusty_common::state::{BrowserInfo, BrowserState};
 use rusty_proto::master_server::Master;
 use rusty_proto::{RegisterAgentRequest, RegisterResponse};
@@ -22,6 +24,11 @@ impl Master for MasterService {
         let req = request.into_inner();
         info!("Recieved registration request for execution={} browser={}", req.execution_id, req.browser_id);
 
+        let display = DisplayMode::from_str(&req.display).unwrap_or_else(|e| {
+            error!("Agent execution={} browser={} reported unknown display '{}' ({e}); recording as headless", req.execution_id, req.browser_id, req.display);
+            DisplayMode::Headless
+        });
+
         let info = BrowserInfo {
             browser_id: req.browser_id.clone(),
             execution_id: req.execution_id.clone(),
@@ -30,6 +37,7 @@ impl Master for MasterService {
             grpc_port: req.grpc_port as u16,
             state: BrowserState::PartialReserved,
             contexts: vec![],
+            display,
         };
 
         self.state.redis.upsert_browser(&info).await.map_err(|e| {

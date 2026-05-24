@@ -10,6 +10,7 @@ use tonic::{Request, Response, Status, Streaming};
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tracing::info;
 
+use rusty_common::display::DisplayMode;
 use rusty_proto::browser_agent_server::{BrowserAgent, BrowserAgentServer};
 use rusty_proto::browser_command::Action;
 use rusty_proto::master_client::MasterClient;
@@ -111,6 +112,7 @@ pub async fn serve(
     execution_id: &str,
     master_url: &str,
     native_tls: bool,
+    display: DisplayMode,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cert_dir = std::env::var("RUSTY_CERT_DIR").unwrap_or_else(|_| ".".to_string());
     let cert = std::fs::read_to_string(format!("{cert_dir}/agent.crt"))
@@ -133,6 +135,7 @@ pub async fn serve(
         public_ip: public_ip.clone(),
         private_ip: private_ip.clone(),
         grpc_port: grpc_port as u32,
+        display: display.as_str().to_string(),
     };
     let browser_id_owned = browser_id.to_string();
     let (master, master_tls) = if native_tls {

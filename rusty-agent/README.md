@@ -73,3 +73,4 @@ For the outbound registration call to the master, the agent loads `master.crt` (
 |---|---|
 | `<master_url>` | (required, positional) gRPC URL of the master server |
 | `--native-tls` | Use system root CAs to verify the master cert instead of the bundled `master.crt` |
+| `--display=<mode>` | Display backend: `headless` (default), `xvfb` (spawn Xvfb + x11vnc for VNC streaming), or `normal` (inherit ambient `DISPLAY`) |

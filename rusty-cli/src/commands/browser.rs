@@ -1,8 +1,26 @@
 use anyhow::Result;
-use clap::Subcommand;
+use clap::{Subcommand, ValueEnum};
 
 use crate::client::RustyClient;
 use crate::config::CliConfig;
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+#[clap(rename_all = "lowercase")]
+pub enum DisplayMode {
+    Headless,
+    Xvfb,
+    Normal,
+}
+
+impl DisplayMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            DisplayMode::Headless => "headless",
+            DisplayMode::Xvfb => "xvfb",
+            DisplayMode::Normal => "normal",
+        }
+    }
+}
 
 #[derive(Subcommand)]
 pub enum BrowserCmd {
@@ -10,6 +28,10 @@ pub enum BrowserCmd {
     Spawn {
         #[arg(long)]
         identity: Option<String>,
+
+        /// How to run the browser display. Defaults to headless.
+        #[arg(long, value_enum, default_value_t = DisplayMode::Headless)]
+        display: DisplayMode,
     },
 
     /// List all active browsers
@@ -217,8 +239,8 @@ pub fn handle(client: &RustyClient, cmd: BrowserCmd) -> Result<()> {
     let mut cfg = CliConfig::load();
 
     match cmd {
-        BrowserCmd::Spawn { identity } => {
-            let body = serde_json::json!({ "identity": identity });
+        BrowserCmd::Spawn { identity, display } => {
+            let body = serde_json::json!({ "identity": identity, "display": display.as_str() });
             let resp: serde_json::Value = client.put("/browsers/", &body)?;
             if let Some(id) = resp.get("execution_id").and_then(|v| v.as_str()) {
                 cfg.set_last_browser(id)?;

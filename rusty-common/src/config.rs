@@ -72,12 +72,6 @@ pub struct ChromeBrowserConfig {
     pub user_data_dir: Option<String>,
     #[serde(default)]
     pub browser_flags: Vec<String>,
-    #[serde(default = "default_enable_display")]
-    pub enable_display: bool,
-}
-
-fn default_enable_display() -> bool {
-    false
 }
 
 #[derive(Debug, Clone, Deserialize)]

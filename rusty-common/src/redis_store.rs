@@ -90,6 +90,7 @@ impl RedisStore {
                 ("private_ip", info.private_ip.as_str()),
                 ("grpc_port", &info.grpc_port.to_string()),
                 ("state", info.state.as_str()),
+                ("display", info.display.as_str()),
             ])
             // ZREM pending_agents {execution_id} — agent registered, no longer stale
             .zrem(self.key(&["pending_agents"]), &info.execution_id)
@@ -103,7 +104,7 @@ impl RedisStore {
         // HMGET browser:{execution_id} field ... — nil for missing fields
         let fields: Vec<Option<String>> = redis::cmd("HMGET")
             .arg(self.key(&["browser", execution_id]))
-            .arg(&["browser_id", "public_ip", "private_ip", "grpc_port", "state"])
+            .arg(&["browser_id", "public_ip", "private_ip", "grpc_port", "state", "display"])
             .query_async(&mut conn)
             .await?;
         self.hydrate(execution_id, fields).await
@@ -117,8 +118,11 @@ impl RedisStore {
         let Some(private_ip) = fields[2].clone() else { return Ok(None); };
         let Some(grpc_port) = fields[3].as_deref().and_then(|p| p.parse().ok()) else { return Ok(None); };
         let state = BrowserState::from_str(fields[4].as_deref().unwrap_or("idle"));
+        let display = fields[5].as_deref()
+            .and_then(|s| s.parse::<crate::display::DisplayMode>().ok())
+            .unwrap_or_default();
         let contexts = self.list_contexts(execution_id).await.unwrap_or_default();
-        Ok(Some(BrowserInfo { execution_id: execution_id.to_string(), browser_id, public_ip, private_ip, grpc_port, state, contexts }))
+        Ok(Some(BrowserInfo { execution_id: execution_id.to_string(), browser_id, public_ip, private_ip, grpc_port, state, contexts, display }))
     }
 
     pub async fn list_browsers(&self) -> Result<Vec<BrowserInfo>, StorageError> {

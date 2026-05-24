@@ -10,8 +10,11 @@ import { ForceButton } from "@/components/ui/ForceButton";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Stat } from "@/components/ui/Stat";
 import { useToast } from "@/components/ui/Toast";
-import { api } from "@/lib/api";
+import { api, type DisplayMode } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/config";
+
+const DISPLAY_MODES: DisplayMode[] = ["headless", "xvfb", "normal"];
 import { usePolling } from "@/lib/hooks";
 import { pushRecentExecution } from "@/lib/recentExecutions";
 import { useRef, useState } from "react";
@@ -26,6 +29,7 @@ export default function BrowsersPage() {
   const [spawning, setSpawning] = useState(false);
   const [closingAll, setClosingAll] = useState(false);
   const [forceClose, setForceClose] = useState(false);
+  const [spawnDisplay, setSpawnDisplay] = useState<DisplayMode>("headless");
   const gridRef = useRef<HTMLDivElement>(null);
   const [selBox, setSelBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
@@ -93,15 +97,17 @@ export default function BrowsersPage() {
     window.addEventListener("mouseup", onUp);
   }
 
+  const xvfbIds = new Set(list.filter((b) => b.display === "xvfb").map((b) => b.execution_id));
+
   function showDisplayForSelected() {
     setDisplayed((d) => {
       const next = new Set(d);
-      selected.forEach((id) => next.add(id));
+      selected.forEach((id) => { if (xvfbIds.has(id)) next.add(id); });
       return next;
     });
   }
 
-  const displayableCount = Array.from(selected).filter((id) => !displayed.has(id)).length;
+  const displayableCount = Array.from(selected).filter((id) => xvfbIds.has(id) && !displayed.has(id)).length;
 
   async function closeAll() {
     if (!confirm(`Close all ${counts.total} browser(s)${forceClose ? " (force)" : ""}?`)) return;
@@ -122,9 +128,9 @@ export default function BrowsersPage() {
   async function spawn() {
     setSpawning(true);
     try {
-      const r = await api.spawnBrowser();
+      const r = await api.spawnBrowser({ display: spawnDisplay });
       pushRecentExecution(r.execution_id);
-      toast.push({ tone: "success", message: `Spawning ${r.execution_id.slice(0, 12)}…` });
+      toast.push({ tone: "success", message: `Spawning ${r.execution_id.slice(0, 12)}… (${spawnDisplay})` });
       refetch();
     } catch (e) {
       toast.push({ tone: "error", message: describeError(e) });
@@ -148,6 +154,24 @@ export default function BrowsersPage() {
                 <IconTrash size={14} /> Close all
               </ForceButton>
             )}
+            <div className="inline-flex h-8 overflow-hidden rounded-md border border-border bg-card">
+              {DISPLAY_MODES.map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setSpawnDisplay(mode)}
+                  aria-pressed={spawnDisplay === mode}
+                  className={cn(
+                    "px-3 text-xs font-medium transition-colors",
+                    spawnDisplay === mode
+                      ? "bg-wb text-wb-inverse"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
             <Button size="sm" onClick={spawn} loading={spawning}>
               <IconPlus size={14} /> Spawn
             </Button>

@@ -30,13 +30,22 @@ export function BrowserCard({
         className="absolute top-2.5 right-2.5 z-10 flex items-center gap-2 rounded-md bg-card/85 px-1.5 py-1 backdrop-blur border border-border"
         onClick={(e) => e.stopPropagation()}
       >
-        <button
-          type="button"
-          onClick={() => onToggleDisplay(b.execution_id)}
-          className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
-        >
-          {showDisplay ? "Hide display" : "Show display"}
-        </button>
+        {b.display === "xvfb" ? (
+          <button
+            type="button"
+            onClick={() => onToggleDisplay(b.execution_id)}
+            className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            {showDisplay ? "Hide display" : "Show display"}
+          </button>
+        ) : (
+          <span
+            className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/70"
+            title={`Display streaming requires the "xvfb" mode at spawn. This browser was started as "${b.display}".`}
+          >
+            No display ({b.display})
+          </span>
+        )}
         <label className="cursor-pointer flex items-center">
           <input
             type="checkbox"
@@ -48,7 +57,7 @@ export function BrowserCard({
         </label>
       </div>
 
-      {showDisplay && (
+      {showDisplay && b.display === "xvfb" && (
         <div className="border-b border-border">
           <DisplayStream browserId={b.execution_id} className="!rounded-none !border-0" />
         </div>

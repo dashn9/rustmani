@@ -22,6 +22,7 @@ use rustenium_cdp_definitions::browser_protocol::page::commands::CaptureScreensh
 use rustenium_identity::preset::get_by_id;
 use rustenium_identity::{IdentityConfig, IdentitySession};
 use rusty_common::config::ProxyList;
+use rusty_common::display::DisplayMode;
 use rusty_common::ui_map::UiNode;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -56,12 +57,6 @@ pub struct ChromeBrowserLaunchConfig {
     pub chrome_executable_path: Option<String>,
     pub user_data_dir: Option<String>,
     pub browser_flags: Vec<String>,
-    #[serde(default = "default_enable_display")]
-    pub enable_display: bool,
-}
-
-fn default_enable_display() -> bool {
-    false
 }
 
 impl ChromeBrowserLaunchConfig {
@@ -116,28 +111,44 @@ pub struct ManagedBrowser {
 }
 
 impl ManagedBrowser {
-    pub async fn launch(mut browser_config: ChromeBrowserLaunchConfig) -> Result<Self, BrowserError> {
+    pub async fn launch(
+        mut browser_config: ChromeBrowserLaunchConfig,
+        display: DisplayMode,
+    ) -> Result<Self, BrowserError> {
         let mut identity = get_by_id(1).unwrap();
         identity.proxy = Self::select_proxy(&identity.geo);
 
-        let (xvfb, vnc, vnc_port) = if browser_config.enable_display {
-            let w = identity.screen.original_width as u32;
-            let h = identity.screen.original_height as u32;
-            let xvfb = spawn_xvfb(w, h)?;
-            let display = std::env::var("DISPLAY")
-                .map_err(|e| BrowserError::Launch(format!("DISPLAY not set after Xvfb: {e}")))?;
-            let (vnc, port) = spawn_x11vnc(&display)?;
-            // No window manager under Xvfb, so Chrome opens at its tiny default and the rest
-            // of the framebuffer renders as the X root (black). Pin Chrome to fill the screen.
-            if !browser_config.browser_flags.iter().any(|f| f.starts_with("--window-size=")) {
-                browser_config.browser_flags.push(format!("--window-size={w},{h}"));
+        let w = identity.screen.original_width as u32;
+        let h = identity.screen.original_height as u32;
+
+        let (xvfb, vnc, vnc_port) = match display {
+            DisplayMode::Xvfb => {
+                let xvfb = spawn_xvfb(w, h)?;
+                let display = std::env::var("DISPLAY")
+                    .map_err(|e| BrowserError::Launch(format!("DISPLAY not set after Xvfb: {e}")))?;
+                let (vnc, port) = spawn_x11vnc(&display)?;
+                // No window manager under Xvfb, so Chrome opens at its tiny default and the rest
+                // of the framebuffer renders as the X root (black). Pin Chrome to fill the screen.
+                if !browser_config.browser_flags.iter().any(|f| f.starts_with("--window-size=")) {
+                    browser_config.browser_flags.push(format!("--window-size={w},{h}"));
+                }
+                if !browser_config.browser_flags.iter().any(|f| f.starts_with("--window-position=")) {
+                    browser_config.browser_flags.push("--window-position=0,0".to_string());
+                }
+                (Some(xvfb), Some(vnc), Some(port))
             }
-            if !browser_config.browser_flags.iter().any(|f| f.starts_with("--window-position=")) {
-                browser_config.browser_flags.push("--window-position=0,0".to_string());
+            DisplayMode::Headless => {
+                if !browser_config.browser_flags.iter().any(|f| f.starts_with("--headless")) {
+                    browser_config.browser_flags.push("--headless=new".to_string());
+                }
+                // Headless Chrome's default viewport is 800x600 — pin it to the identity screen
+                // so screenshots and viewport-dependent rendering match the non-headless paths.
+                if !browser_config.browser_flags.iter().any(|f| f.starts_with("--window-size=")) {
+                    browser_config.browser_flags.push(format!("--window-size={w},{h}"));
+                }
+                (None, None, None)
             }
-            (Some(xvfb), Some(vnc), Some(port))
-        } else {
-            (None, None, None)
+            DisplayMode::Normal => (None, None, None),
         };
 
         let config = IdentityConfig::new(identity, browser_config.into());
@@ -190,12 +201,6 @@ impl ManagedBrowser {
             .await
             .map(|_| ())
             .map_err(|e| BrowserError::Navigate(e.to_string()))?;
-        tokio::time::sleep(Duration::from_secs(4)).await;
-        let _ = self
-            .session
-            .browser_mut()
-            .evaluate_script(format!("({CURSOR_SCRIPT})()"), false)
-            .await;
         Ok(())
     }
 
@@ -792,7 +797,6 @@ mod tests {
             chrome_executable_path: Some("/usr/bin/google-chrome".into()),
             user_data_dir: Some("/tmp/profile".into()),
             browser_flags: vec![],
-            enable_display: false,
         };
         let chrome: ChromeConfig = cfg.into();
         assert_eq!(chrome.driver_executable_path, "/usr/bin/chromedriver");

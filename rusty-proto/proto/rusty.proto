@@ -24,6 +24,9 @@ message RegisterAgentRequest {
   string public_ip    = 3;
   string private_ip   = 4;
   uint32 grpc_port    = 5;
+  // Display mode the agent actually started with: "headless", "xvfb", or "normal".
+  // Used by the master to advertise which browsers can be VNC-streamed.
+  string display      = 6;
 }
 
 message RegisterResponse {

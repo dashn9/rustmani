@@ -1,3 +1,6 @@
+use std::str::FromStr;
+
+use rusty_common::display::DisplayMode;
 use tracing::info;
 use uuid::Uuid;
 
@@ -5,6 +8,8 @@ mod browser;
 mod error;
 mod executor;
 mod server;
+
+use error::AgentError;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,15 +33,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let master_url = args.get(1).cloned()
         .expect("master_url must be passed as the first argument");
     let native_tls = args.contains(&"--native-tls".to_string());
+    let display = match args.iter().find_map(|a| a.strip_prefix("--display=")) {
+        Some(s) => DisplayMode::from_str(s).map_err(AgentError::InvalidArgument)?,
+        None => DisplayMode::default(),
+    };
 
     let browser_id = Uuid::new_v4().to_string();
     let browser_config = browser::ChromeBrowserLaunchConfig::from_env().unwrap_or_default();
 
-    info!("Starting rusty-agent browser={browser_id} execution={execution_id}");
+    info!("Starting rusty-agent browser={browser_id} execution={execution_id} display={}", display.as_str());
 
-    let browser = browser::ManagedBrowser::launch(browser_config).await?;
+    let browser = browser::ManagedBrowser::launch(browser_config, display).await?;
 
-    server::serve(browser, &browser_id, &execution_id, &master_url, native_tls).await?;
+    server::serve(browser, &browser_id, &execution_id, &master_url, native_tls, display).await?;
 
     Ok(())
 }

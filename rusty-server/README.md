@@ -53,6 +53,14 @@ Each browser agent owns exactly one browser instance. When spawned, Flux returns
 | `POST` | `/browsers/{id}/instruct/` | Run a natural language instruction |
 | `GET` | `/browsers/{id}/logs/` | Fetch execution logs from Flux |
 
+### Display modes
+
+`PUT /browsers/` accepts an optional `display` field (default `headless`):
+
+- `headless` — Chrome runs with `--headless=new`; no display server needed.
+- `xvfb` — agent spawns Xvfb + x11vnc so the session can be streamed over VNC (Linux only).
+- `normal` — Chrome inherits whatever `DISPLAY` the agent process has.
+
 ## Configuration
 
 Set via `rusty.yaml` (path overridable with `RUSTY_CONFIG` env var). See [`example.rusty.yaml`](example.rusty.yaml) for a full annotated reference.

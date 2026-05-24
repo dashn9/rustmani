@@ -12,8 +12,8 @@ path = "src/main.rs"
 [dependencies]
 rusty-common = { path = "../rusty-common" }
 rusty-proto = { path = "../rusty-proto" }
-rustenium-identity = "0.1.7"
-rustenium = "1.1.9"
+rustenium-identity = "0.1.8"
+rustenium = "1.1.10"
 rustenium-cdp-definitions = "0.1.1"
 rustenium-bidi-definitions = "0.1.1"
 rustenium-macros = "1.0.0"

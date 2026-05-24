@@ -5,6 +5,7 @@ use tokio::process::Command;
 use uuid::Uuid;
 
 use rusty_common::ai::BrowserAction;
+use rusty_common::display::DisplayMode;
 use rusty_common::error::BrowserError;
 use rusty_common::state::BrowserInfo;
 use rusty_proto::browser_agent_client::BrowserAgentClient;
@@ -28,7 +29,11 @@ impl BrowserService {
 
     /// Spawns a new agent via Flux (or locally if `flux.local_binary` is set).
     /// Returns the execution_id — the agent registers back via gRPC.
-    pub async fn create_browser(&self, identity: Option<serde_json::Value>) -> Result<String, AppError> {
+    pub async fn create_browser(
+        &self,
+        identity: Option<serde_json::Value>,
+        display: DisplayMode,
+    ) -> Result<String, AppError> {
         let master_url = self.state.config.server.grpc_server_url.clone().unwrap_or_else(|| {
             format!(
                 "https://{}:{}",
@@ -37,11 +42,13 @@ impl BrowserService {
             )
         });
 
+        let display_arg = format!("--display={}", display.as_str());
+
         if let Some(ref binary) = self.state.config.flux.local_binary {
             let execution_id = format!("test-{}", Uuid::new_v4());
             self.state.redis.store_pending_execution(&execution_id).await?;
-            spawn_local_agent(binary, &execution_id, &master_url, &self.state.config.agent_env).await?;
-            tracing::info!("local agent spawned execution_id={execution_id}");
+            spawn_local_agent(binary, &execution_id, &master_url, &display_arg, &self.state.config.agent_env).await?;
+            tracing::info!("local agent spawned execution_id={execution_id} display={}", display.as_str());
             return Ok(execution_id);
         }
 
@@ -50,8 +57,9 @@ impl BrowserService {
         if self.state.config.server.grpc_server_url.is_some() {
             args.push("--native-tls".to_string());
         }
+        args.push(display_arg);
         args.extend(identity.into_iter().map(|v| v.to_string()));
-        tracing::info!("spawning agent master_url={master_url}");
+        tracing::info!("spawning agent master_url={master_url} display={}", display.as_str());
         let execution_id = self.state.flux.spawn_agent(&self.state.config.flux.function_name, &args).await?;
         self.state.redis.store_pending_execution(&execution_id).await?;
         tracing::info!("agent spawned execution_id={execution_id}");
@@ -442,13 +450,14 @@ impl BrowserService {
     }
 }
 
-async fn spawn_local_agent(binary: &str, execution_id: &str, master_url: &str, agent_env: &std::collections::HashMap<String, String>) -> Result<(), AppError> {
+async fn spawn_local_agent(binary: &str, execution_id: &str, master_url: &str, display_arg: &str, agent_env: &std::collections::HashMap<String, String>) -> Result<(), AppError> {
     let mut parts = binary.split_whitespace();
     let program = parts.next()
         .ok_or_else(|| AppError::Internal("flux.local_binary is empty".into()))?;
     let mut cmd = Command::new(program);
     cmd.args(parts);
     cmd.arg(master_url);
+    cmd.arg(display_arg);
 
     // Apply user-supplied env first so authoritative vars below cannot be overridden.
     cmd.envs(agent_env);
