@@ -61,9 +61,21 @@ pub struct ChromeBrowserLaunchConfig {
 
 impl ChromeBrowserLaunchConfig {
     pub fn from_env() -> Option<Self> {
-        std::env::var("RUSTY_BROWSER_CONFIG")
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
+        let raw = std::env::var("RUSTY_BROWSER_CONFIG").ok();
+        match &raw {
+            Some(s) => tracing::info!("RUSTY_BROWSER_CONFIG present ({} bytes)", s.len()),
+            None => tracing::warn!("RUSTY_BROWSER_CONFIG not set — falling back to defaults"),
+        }
+        raw.and_then(|s| match serde_json::from_str::<Self>(&s) {
+            Ok(cfg) => {
+                tracing::info!("parsed browser config: {} browser_flags", cfg.browser_flags.len());
+                Some(cfg)
+            }
+            Err(e) => {
+                tracing::error!("RUSTY_BROWSER_CONFIG JSON parse failed: {e}");
+                None
+            }
+        })
     }
 }
 
