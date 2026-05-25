@@ -17,7 +17,7 @@ type Props = {
 };
 
 export function LogStream({ executionId, source = "rusty", height = "h-72" }: Props) {
-  const [autoscroll, setAutoscroll] = useState(true);
+  const [pinned, setPinned] = useState(true);
   const ref = useRef<HTMLDivElement>(null);
   const { data, error, loading } = usePolling(
     (s) => (source === "flux"
@@ -31,10 +31,23 @@ export function LogStream({ executionId, source = "rusty", height = "h-72" }: Pr
   const lines = useMemo(() => parseAnsiLines(rawText).map(parseStructured), [rawText]);
 
   useEffect(() => {
-    if (autoscroll && ref.current) {
+    if (pinned && ref.current) {
       ref.current.scrollTop = ref.current.scrollHeight;
     }
-  }, [lines.length, autoscroll]);
+  }, [lines.length, pinned]);
+
+  function onScroll(e: React.UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 4;
+    setPinned(atBottom);
+  }
+
+  function scrollToBottom() {
+    if (ref.current) {
+      ref.current.scrollTop = ref.current.scrollHeight;
+      setPinned(true);
+    }
+  }
 
   return (
     <div className="rounded-md border border-border bg-wb-950 text-wb-inverse">
@@ -45,17 +58,23 @@ export function LogStream({ executionId, source = "rusty", height = "h-72" }: Pr
             {error ? "logs unavailable" : `${lines.length} lines · ${source}${loading ? " · live" : ""}`}
           </span>
         </div>
-        <label className="flex items-center gap-1.5 text-[11px] text-white/70 shrink-0">
-          <input
-            type="checkbox"
-            checked={autoscroll}
-            onChange={(e) => setAutoscroll(e.target.checked)}
-            className="h-3 w-3 accent-[var(--accent)]"
-          />
-          Auto-scroll
-        </label>
+        {pinned ? (
+          <span className="text-[11px] text-white/50 shrink-0">Auto-scrolling</span>
+        ) : (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            className="inline-flex items-center gap-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-[11px] px-2 py-0.5 border border-white/15 transition-colors shrink-0"
+          >
+            Paused ↓ Scroll to bottom
+          </button>
+        )}
       </div>
-      <div ref={ref} className={`${height} overflow-y-auto wb-scroll p-2 font-mono text-[11px] leading-relaxed`}>
+      <div
+        ref={ref}
+        onScroll={onScroll}
+        className={`${height} overflow-y-scroll wb-scroll-dark p-2 font-mono text-[11px] leading-relaxed`}
+      >
         {error ? (
           <div className="text-[var(--error)]">{error.message}</div>
         ) : lines.length === 0 || (lines.length === 1 && lines[0].segs.length === 0) ? (

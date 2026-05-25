@@ -44,10 +44,20 @@ impl BrowserService {
 
         let display_arg = format!("--display={}", display.as_str());
 
+        let browser_config_json = self.state.config.browser.chrome_config.as_ref()
+            .and_then(|c| serde_json::to_string(c).ok());
+
         if let Some(ref binary) = self.state.config.flux.local_binary {
             let execution_id = format!("test-{}", Uuid::new_v4());
             self.state.redis.store_pending_execution(&execution_id).await?;
-            spawn_local_agent(binary, &execution_id, &master_url, &display_arg, &self.state.config.agent_env).await?;
+            spawn_local_agent(
+                binary,
+                &execution_id,
+                &master_url,
+                &display_arg,
+                &self.state.config.agent_env,
+                browser_config_json.as_deref(),
+            ).await?;
             let display_str = display.as_str();
             tracing::info!("local agent spawned execution_id={execution_id} display={display_str}");
             return Ok(execution_id);
@@ -452,7 +462,14 @@ impl BrowserService {
     }
 }
 
-async fn spawn_local_agent(binary: &str, execution_id: &str, master_url: &str, display_arg: &str, agent_env: &std::collections::HashMap<String, String>) -> Result<(), AppError> {
+async fn spawn_local_agent(
+    binary: &str,
+    execution_id: &str,
+    master_url: &str,
+    display_arg: &str,
+    agent_env: &std::collections::HashMap<String, String>,
+    browser_config_json: Option<&str>,
+) -> Result<(), AppError> {
     let mut parts = binary.split_whitespace();
     let program = parts.next()
         .ok_or_else(|| AppError::Internal("flux.local_binary is empty".into()))?;
@@ -466,6 +483,9 @@ async fn spawn_local_agent(binary: &str, execution_id: &str, master_url: &str, d
     cmd.env("FLUX_EXECUTION_ID", execution_id);
     cmd.env("FLUX_NODE_PRIVATE_IP", "127.0.0.1");
     cmd.env("FLUX_NODE_PUBLIC_IP", "127.0.0.1");
+    if let Some(json) = browser_config_json {
+        cmd.env("RUSTY_BROWSER_CONFIG", json);
+    }
 
     // Only default RUSTY_CERT_DIR if neither the caller nor the parent env provided one.
     if !agent_env.contains_key("RUSTY_CERT_DIR") && std::env::var_os("RUSTY_CERT_DIR").is_none() {

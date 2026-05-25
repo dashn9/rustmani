@@ -120,6 +120,7 @@ impl ManagedBrowser {
 
         let w = identity.screen.original_width as u32;
         let h = identity.screen.original_height as u32;
+        let flags = &mut browser_config.browser_flags;
 
         let (xvfb, vnc, vnc_port) = match display {
             DisplayMode::Xvfb => {
@@ -129,23 +130,20 @@ impl ManagedBrowser {
                 let (vnc, port) = spawn_x11vnc(&display)?;
                 // No window manager under Xvfb, so Chrome opens at its tiny default and the rest
                 // of the framebuffer renders as the X root (black). Pin Chrome to fill the screen.
-                if !browser_config.browser_flags.iter().any(|f| f.starts_with("--window-size=")) {
-                    browser_config.browser_flags.push(format!("--window-size={w},{h}"));
-                }
-                if !browser_config.browser_flags.iter().any(|f| f.starts_with("--window-position=")) {
-                    browser_config.browser_flags.push("--window-position=0,0".to_string());
-                }
+                default_flag(flags, "--window-size=", || format!("--window-size={w},{h}"));
+                default_flag(flags, "--window-position=", || "--window-position=0,0".to_string());
                 (Some(xvfb), Some(vnc), Some(port))
             }
             DisplayMode::Headless => {
-                if !browser_config.browser_flags.iter().any(|f| f.starts_with("--headless")) {
-                    browser_config.browser_flags.push("--headless=new".to_string());
-                }
+                default_flag(flags, "--headless", || "--headless=new".to_string());
                 // Headless Chrome's default viewport is 800x600 — pin it to the identity screen
                 // so screenshots and viewport-dependent rendering match the non-headless paths.
-                if !browser_config.browser_flags.iter().any(|f| f.starts_with("--window-size=")) {
-                    browser_config.browser_flags.push(format!("--window-size={w},{h}"));
-                }
+                default_flag(flags, "--window-size=", || format!("--window-size={w},{h}"));
+                // Configures a virtual headless screen (Chromium 142+) so window.screen.*
+                // matches the identity instead of the 800x600 stub. Independent of
+                // Emulation.setDeviceMetricsOverride, so it doesn't flip the fingerprint
+                // override flag that detection scripts look for on desktop identities.
+                default_flag(flags, "--screen-info=", || format!("--screen-info={{{w}x{h}}}"));
                 (None, None, None)
             }
             DisplayMode::Normal => (None, None, None),
@@ -580,6 +578,12 @@ impl ManagedBrowser {
             let _ = child.wait();
         }
         result
+    }
+}
+
+fn default_flag(flags: &mut Vec<String>, prefix: &str, value: impl FnOnce() -> String) {
+    if !flags.iter().any(|f| f.starts_with(prefix)) {
+        flags.push(value());
     }
 }
 

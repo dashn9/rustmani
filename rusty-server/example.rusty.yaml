@@ -41,5 +41,7 @@ deployment:
 #     chrome_executable_path: "/usr/bin/google-chrome"
 #     browser_flags:
 #       - "--disable-blink-features=AutomationControlled"
+#       # Route Chromium shmem to /tmp; /dev/shm is often undersized and renderers
+#       # OOM into "Aw, Snap!" on heavy pages otherwise.
 #       - "--disable-dev-shm-usage"
 #       - "--no-sandbox"

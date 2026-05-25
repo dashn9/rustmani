@@ -26,15 +26,20 @@ export function BrowserDetail({ browserId: id }: Props) {
   );
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [force, setForce] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [creatingContext, setCreatingContext] = useState(false);
+  const [closing, setClosing] = useState(false);
 
   async function closeBrowser() {
     if (!confirm(`Close this browser${force ? " (force)" : ""}?`)) return;
+    setClosing(true);
     try {
       await api.closeBrowser(id, force);
       toast.push({ tone: "success", message: "Browser closed" });
       router.push("/browsers");
     } catch (e) {
       toast.push({ tone: "error", message: describeError(e) });
+      setClosing(false);
     }
   }
 
@@ -71,9 +76,17 @@ export function BrowserDetail({ browserId: id }: Props) {
         </CardBody>
       </Card>
 
-      <Section title="Display">
-        <DisplayStream browserId={id} />
-      </Section>
+      {data && (
+        <Section title="Display">
+          {data.display === "xvfb" ? (
+            <DisplayStream browserId={id} />
+          ) : (
+            <div className="rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+              No live display — this browser was spawned as <span className="font-mono">{data.display}</span>. Spawn with <span className="font-mono">xvfb</span> to stream the display.
+            </div>
+          )}
+        </Section>
+      )}
 
       <Section title="Interaction">
         <ActionRow
@@ -134,13 +147,17 @@ export function BrowserDetail({ browserId: id }: Props) {
           <span className="text-xs font-medium min-w-24">Screenshot</span>
           <Button
             size="sm"
+            loading={capturing}
             onClick={async () => {
+              setCapturing(true);
               try {
                 const r = await api.screenshot(id);
                 setScreenshot(r.data);
                 toast.push({ tone: "success", message: "Screenshot captured" });
               } catch (e) {
                 toast.push({ tone: "error", message: describeError(e) });
+              } finally {
+                setCapturing(false);
               }
             }}
           >
@@ -194,12 +211,16 @@ export function BrowserDetail({ browserId: id }: Props) {
           <Button
             size="sm"
             variant="secondary"
+            loading={creatingContext}
             onClick={async () => {
+              setCreatingContext(true);
               try {
                 const r = await api.createContext(id);
                 toast.push({ tone: "success", message: `Context ${r.context_id} opened` });
               } catch (e) {
                 toast.push({ tone: "error", message: describeError(e) });
+              } finally {
+                setCreatingContext(false);
               }
             }}
           >
@@ -228,7 +249,7 @@ export function BrowserDetail({ browserId: id }: Props) {
 
       <Section title="Lifecycle">
         <div className="flex justify-end">
-          <ForceButton force={force} onToggleForce={setForce} onClick={closeBrowser}>
+          <ForceButton force={force} onToggleForce={setForce} onClick={closeBrowser} loading={closing}>
             Close browser
           </ForceButton>
         </div>
