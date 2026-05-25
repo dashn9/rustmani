@@ -41,6 +41,7 @@ export function DisplayStream({ browserId: id, viewOnly = false, className }: Pr
       instance.addEventListener("disconnect", (e: { detail?: { clean?: boolean } }) => {
         setConnected(false);
         if (!e?.detail?.clean) setError("Disconnected");
+        rfb = null;
       });
       instance.addEventListener("securityfailure", (e: { detail?: { reason?: string } }) => {
         setError(e?.detail?.reason ?? "Authentication failed");

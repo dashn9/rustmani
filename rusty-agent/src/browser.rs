@@ -17,6 +17,11 @@ use rustenium::input::Mouse;
 use rustenium::input::{DelayRange, MouseClickOptions, MouseMoveOptions, Point};
 use rustenium::nodes::{AXNode, Node};
 use rustenium_bidi_definitions::browsing_context::types::CreateType;
+use rustenium_cdp_definitions::browser_protocol::browser::commands::{
+    GetWindowForTarget, SetWindowBounds,
+};
+use rustenium_cdp_definitions::browser_protocol::browser::results::GetWindowForTargetResult;
+use rustenium_cdp_definitions::browser_protocol::browser::types::{Bounds, WindowState};
 use rustenium_cdp_definitions::browser_protocol::dom::types::{BackendNodeId, NodeId};
 use rustenium_cdp_definitions::browser_protocol::page::commands::CaptureScreenshotFormat;
 use rustenium_identity::preset::get_by_id;
@@ -63,12 +68,12 @@ impl ChromeBrowserLaunchConfig {
     pub fn from_env() -> Option<Self> {
         let raw = std::env::var("RUSTY_BROWSER_CONFIG").ok();
         match &raw {
-            Some(s) => tracing::info!("RUSTY_BROWSER_CONFIG present ({} bytes)", s.len()),
+            Some(s) => tracing::debug!("RUSTY_BROWSER_CONFIG present ({} bytes)", s.len()),
             None => tracing::warn!("RUSTY_BROWSER_CONFIG not set — falling back to defaults"),
         }
         raw.and_then(|s| match serde_json::from_str::<Self>(&s) {
             Ok(cfg) => {
-                tracing::info!("parsed browser config: {} browser_flags", cfg.browser_flags.len());
+                tracing::debug!("parsed browser config: {} browser_flags", cfg.browser_flags.len());
                 Some(cfg)
             }
             Err(e) => {
@@ -169,6 +174,12 @@ impl ManagedBrowser {
             .browser_mut()
             .add_preload_script(format!("{CURSOR_SCRIPT}"))
             .await;
+        if xvfb.is_some() {
+            // No window manager under Xvfb, so --start-maximized is a no-op. Drive the
+            // window state directly via CDP — fullscreen first to break past any default
+            // size, then maximized so toolbars render.
+            Self::pin_window_to_screen(&mut session, w, h).await?;
+        }
         let id = Uuid::new_v4();
         tracing::info!("launched {id}");
         Ok(Self {
@@ -183,6 +194,41 @@ impl ManagedBrowser {
 
     pub fn vnc_port(&self) -> Option<u16> {
         self.vnc_port
+    }
+
+    async fn pin_window_to_screen(
+        session: &mut IdentitySession,
+        width: u32,
+        height: u32,
+    ) -> Result<(), BrowserError> {
+        let browser = session.browser_mut();
+        let response = browser
+            .adapter_mut()
+            .send_command(GetWindowForTarget::builder().build())
+            .await
+            .map_err(|e| BrowserError::Launch(format!("getWindowForTarget: {e}")))?;
+        let window = GetWindowForTargetResult::try_from(response.result)
+            .map_err(|e| BrowserError::Launch(format!("getWindowForTarget parse: {e}")))?;
+        for state in [WindowState::Fullscreen, WindowState::Maximized] {
+            let bounds = Bounds {
+                left: Some(0),
+                top: Some(0),
+                width: Some(width as i64),
+                height: Some(height as i64),
+                window_state: Some(state),
+            };
+            let cmd = SetWindowBounds::builder()
+                .window_id(window.window_id)
+                .bounds(bounds)
+                .build()
+                .map_err(|e| BrowserError::Launch(format!("setWindowBounds build: {e}")))?;
+            browser
+                .adapter_mut()
+                .send_command(cmd)
+                .await
+                .map_err(|e| BrowserError::Launch(format!("setWindowBounds: {e}")))?;
+        }
+        Ok(())
     }
 
     fn select_proxy(geo: &rustenium_identity::IdentityCountryGeo) -> Option<String> {
