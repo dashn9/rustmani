@@ -174,10 +174,12 @@ impl ManagedBrowser {
             .add_preload_script(format!("{CURSOR_SCRIPT}"))
             .await;
         if xvfb.is_some() {
-            // No window manager under Xvfb, so --start-maximized is a no-op. Drive the
-            // window state directly via CDP — fullscreen first to break past any default
-            // size, then maximized so toolbars render.
-            Self::pin_window_to_screen(&mut session).await?;
+            // No window manager under Xvfb, so --start-maximized is a no-op. Mirror the
+            // Python containerized path: fullscreen then maximized.
+            Self::set_window_state(&mut session, 0, 0, w as i64, h as i64, WindowState::Fullscreen)
+                .await?;
+            Self::set_window_state(&mut session, 0, 0, w as i64, h as i64, WindowState::Maximized)
+                .await?;
         }
         let id = Uuid::new_v4();
         tracing::info!("launched {id}");
@@ -195,34 +197,66 @@ impl ManagedBrowser {
         self.vnc_port
     }
 
-    async fn pin_window_to_screen(session: &mut IdentitySession) -> Result<(), BrowserError> {
-        let browser = session.browser_mut();
-        let response = browser
-            .adapter_mut()
-            .send_command(GetWindowForTarget::builder().build())
-            .await
-            .map_err(|e| BrowserError::Launch(format!("getWindowForTarget: {e}")))?;
-        let window = GetWindowForTargetResult::try_from(response.result)
-            .map_err(|e| BrowserError::Launch(format!("getWindowForTarget parse: {e}")))?;
-        for state in [WindowState::Fullscreen, WindowState::Maximized] {
-            let bounds = Bounds {
+    async fn set_window_state(
+        session: &mut IdentitySession,
+        left: i64,
+        top: i64,
+        width: i64,
+        height: i64,
+        state: WindowState,
+    ) -> Result<(), BrowserError> {
+        let window_id = {
+            let response = session
+                .browser_mut()
+                .adapter_mut()
+                .send_command(GetWindowForTarget::builder().build())
+                .await
+                .map_err(|e| BrowserError::Launch(format!("getWindowForTarget: {e}")))?;
+            GetWindowForTargetResult::try_from(response.result)
+                .map_err(|e| BrowserError::Launch(format!("getWindowForTarget parse: {e}")))?
+                .window_id
+        };
+
+        let bounds = if matches!(state, WindowState::Normal) {
+            Bounds {
+                left: Some(left),
+                top: Some(top),
+                width: Some(width),
+                height: Some(height),
+                window_state: Some(state),
+            }
+        } else {
+            // min, max, full can only be used when current state == NORMAL
+            // therefore we first switch to NORMAL.
+            Box::pin(Self::set_window_state(
+                session,
+                left,
+                top,
+                width,
+                height,
+                WindowState::Normal,
+            ))
+            .await?;
+            Bounds {
                 left: None,
                 top: None,
                 width: None,
                 height: None,
                 window_state: Some(state),
-            };
-            let cmd = SetWindowBounds::builder()
-                .window_id(window.window_id)
-                .bounds(bounds)
-                .build()
-                .map_err(|e| BrowserError::Launch(format!("setWindowBounds build: {e}")))?;
-            browser
-                .adapter_mut()
-                .send_command(cmd)
-                .await
-                .map_err(|e| BrowserError::Launch(format!("setWindowBounds: {e}")))?;
-        }
+            }
+        };
+
+        let cmd = SetWindowBounds::builder()
+            .window_id(window_id)
+            .bounds(bounds)
+            .build()
+            .map_err(|e| BrowserError::Launch(format!("setWindowBounds build: {e}")))?;
+        session
+            .browser_mut()
+            .adapter_mut()
+            .send_command(cmd)
+            .await
+            .map_err(|e| BrowserError::Launch(format!("setWindowBounds: {e}")))?;
         Ok(())
     }
 
