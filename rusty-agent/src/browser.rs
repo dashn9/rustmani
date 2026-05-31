@@ -174,6 +174,8 @@ impl ManagedBrowser {
             .add_preload_script(format!("{CURSOR_SCRIPT}"))
             .await;
         if xvfb.is_some() {
+            // TODO: set_window_state still doesn't end up filling the Xvfb framebuffer —
+            // fullscreen→normal→maximized goes through but Chrome stays at its launch size.
             // No window manager under Xvfb, so --start-maximized is a no-op. Mirror the
             // Python containerized path: fullscreen then maximized.
             Self::set_window_state(&mut session, 0, 0, w as i64, h as i64, WindowState::Fullscreen)
